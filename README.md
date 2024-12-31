@@ -1,2 +1,3 @@
 # pool-guy
-When you need someone to maintain and clean your kiddie pool during twitch live streams, but can't rely on streamelements to get it done.
+This is the untested new version of my twitch bot. Don't expect too much right meow...
+>Parts of this project have been inappropriately touched by AI.
