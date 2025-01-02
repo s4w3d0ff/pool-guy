@@ -194,7 +194,7 @@ class TwitchApi(RequestHandler):
             "sender_id": sender_id or self.user_id,
             "message": message
         }
-        r = await self.api_request("post", apiEndpoints['chat'], data=data)
+        r = await self.api_request("post", apiEndpoints['chat'], data=json.dumps(data))
         return r['data']
 
     async def getChatters(self, broadcaster_id=None, moderator_id=None):
@@ -216,7 +216,7 @@ class TwitchApi(RequestHandler):
     async def updateChatSettings(self, broadcaster_id=None, settings=None):
         data = settings or {}
         data["broadcaster_id"] = broadcaster_id or self.user_id
-        r = await self.api_request("patch", f"{apiEndpoints['chat']}/settings", data=data)
+        r = await self.api_request("patch", f"{apiEndpoints['chat']}/settings", data=json.dumps(data))
         return r['data']
 
     async def sendAnnouncement(self, broadcaster_id=None, message="", color="primary"):
@@ -225,7 +225,7 @@ class TwitchApi(RequestHandler):
             "message": message,
             "color": color
         }
-        r = await self.api_request("post", f"{apiEndpoints['chat']}/announcements", data=data)
+        r = await self.api_request("post", f"{apiEndpoints['chat']}/announcements", data=json.dumps(data))
         return r['data']
 
     async def sendShoutout(self, from_broadcaster_id=None, to_broadcaster_id=None, moderator_id=None):
@@ -234,14 +234,14 @@ class TwitchApi(RequestHandler):
             "to_broadcaster_id": to_broadcaster_id,
             "moderator_id": moderator_id or self.user_id
         }
-        r = await self.api_request("post", f"{apiEndpoints['chat']}/shoutouts", data=data)
+        r = await self.api_request("post", f"{apiEndpoints['chat']}/shoutouts", data=json.dumps(data))
         return r['data']
         
     #============================================================================
     # Clips Methods ================================================================
     async def createClip(self, broadcaster_id=None):
         data = {"broadcaster_id": broadcaster_id or self.user_id}
-        r = await self.api_request("post", apiEndpoints['clips'], data=data)
+        r = await self.api_request("post", apiEndpoints['clips'], data=json.dumps(data))
         return r['data']
 
     async def getClips(self, broadcaster_id=None, game_id=None, clip_id=None):
@@ -262,7 +262,7 @@ class TwitchApi(RequestHandler):
             "broadcaster_id": broadcaster_id or self.user_id,
             "length": length
         }
-        r = await self.api_request("post", apiEndpoints['commercial'], data=data)
+        r = await self.api_request("post", apiEndpoints['commercial'], data=json.dumps(data))
         return r['data']
         
     #============================================================================
@@ -314,7 +314,7 @@ class TwitchApi(RequestHandler):
         }
         if duration:
             data["data"]["duration"] = duration
-        r = await self.api_request("post", apiEndpoints['ban'], data=data)
+        r = await self.api_request("post", apiEndpoints['ban'], data=json.dumps(data))
         return r['data']
 
     async def unbanUser(self, broadcaster_id=None, user_id=None):
@@ -337,7 +337,7 @@ class TwitchApi(RequestHandler):
             "broadcaster_id": broadcaster_id or self.user_id,
             "user_id": user_id
         }
-        r = await self.api_request("post", apiEndpoints['moderators'], data=data)
+        r = await self.api_request("post", apiEndpoints['moderators'], data=json.dumps(data))
         return r['data']
 
     async def removeModerator(self, broadcaster_id=None, user_id=None):
@@ -360,7 +360,7 @@ class TwitchApi(RequestHandler):
             "broadcaster_id": broadcaster_id or self.user_id,
             "user_id": user_id
         }
-        r = await self.api_request("post", apiEndpoints['channel_vips'], data=data)
+        r = await self.api_request("post", apiEndpoints['channel_vips'], data=json.dumps(data))
         return r['data']
 
     async def removeVIP(self, broadcaster_id=None, user_id=None):
@@ -379,7 +379,7 @@ class TwitchApi(RequestHandler):
             "user_id": user_id,
             "reason": reason
         }
-        r = await self.api_request("post", f"{apiEndpoints['chat']}/warnings", data=data)
+        r = await self.api_request("post", f"{apiEndpoints['chat']}/warnings", data=json.dumps(data))
         return r['data']
         
     #============================================================================
@@ -396,7 +396,7 @@ class TwitchApi(RequestHandler):
             "choices": choices,
             "duration": duration
         }
-        r = await self.api_request("post", apiEndpoints['polls'], data=data)
+        r = await self.api_request("post", apiEndpoints['polls'], data=json.dumps(data))
         return r['data']
 
     async def endPoll(self, broadcaster_id=None, poll_id=None, status="TERMINATED"):
@@ -405,7 +405,7 @@ class TwitchApi(RequestHandler):
             "id": poll_id,
             "status": status
         }
-        r = await self.api_request("patch", apiEndpoints['polls'], data=data)
+        r = await self.api_request("patch", apiEndpoints['polls'], data=json.dumps(data))
         return r['data']
         
     #============================================================================
@@ -422,7 +422,7 @@ class TwitchApi(RequestHandler):
             "outcomes": outcomes,
             "prediction_window": prediction_window
         }
-        r = await self.api_request("post", apiEndpoints['predictions'], data=data)
+        r = await self.api_request("post", apiEndpoints['predictions'], data=json.dumps(data))
         return r['data']
 
     async def endPrediction(self, broadcaster_id=None, id=None, status="RESOLVED", winning_outcome_id=None):
@@ -433,7 +433,7 @@ class TwitchApi(RequestHandler):
         }
         if winning_outcome_id:
             data["winning_outcome_id"] = winning_outcome_id
-        r = await self.api_request("patch", apiEndpoints['predictions'], data=data)
+        r = await self.api_request("patch", apiEndpoints['predictions'], data=json.dumps(data))
         return r['data']
         
     #============================================================================
@@ -443,7 +443,7 @@ class TwitchApi(RequestHandler):
             "from_broadcaster_id": from_broadcaster_id or self.user_id,
             "to_broadcaster_id": to_broadcaster_id
         }
-        r = await self.api_request("post", apiEndpoints['raids'], data=data)
+        r = await self.api_request("post", apiEndpoints['raids'], data=json.dumps(data))
         return r['data']
 
     async def cancelRaid(self, broadcaster_id=None):
@@ -497,7 +497,7 @@ class TwitchApi(RequestHandler):
             "user_id": self.user_id,
             "description": description
         }
-        r = await self.api_request("post", apiEndpoints['stream_markers'], data=data)
+        r = await self.api_request("post", apiEndpoints['stream_markers'], data=json.dumps(data))
         return r['data']
 
     async def getStreamMarkers(self, user_id=None, video_id=None, first=20):
@@ -571,7 +571,7 @@ class TwitchApi(RequestHandler):
             "to_user_id": to_user_id,
             "message": message
         }
-        r = await self.api_request("post", apiEndpoints['whispers'], data=data)
+        r = await self.api_request("post", apiEndpoints['whispers'], data=json.dumps(data))
         return r['data']
         
     #=========================================================================

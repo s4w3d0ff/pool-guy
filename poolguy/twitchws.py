@@ -176,20 +176,28 @@ class GenericAlert(Alert):
 #=============================================================================================
 class AlertFactory:
     """Factory class to create the appropriate Alert instance based on event type."""
+    _alert_classes = {}  # Cache for alert classes
+
+    @classmethod
+    def register_alert_class(cls, alert_type, alert_class):
+        """Register an alert class for a specific type"""
+        cls._alert_classes[alert_type] = alert_class
+
     @staticmethod
     def create_alert(bot, alert_id, alert_type, data, meta):
         """Create an appropriate Alert instance based on the alert type."""
+        # First check if we have a registered class for this type
+        if alert_type in AlertFactory._alert_classes:
+            return AlertFactory._alert_classes[alert_type](bot, alert_id, alert_type, data, meta)
+
+        # Fall back to the old method
         def get_alert_class_name(event_type):
             parts = event_type.split('.')
             class_parts = [part.title().replace('-', '') for part in parts]
             return ''.join(class_parts) + 'Alert'
-        class_name = get_alert_class_name(alert_type)
-        # Get the actual class from globals()
-        alert_class = globals().get(class_name)
-        if alert_class is None:
-            logger.warn(f"{class_name} wasn't found! 'GenericAlert' used instead...")
-            return GenericAlert(bot, alert_id, alert_type, data, meta)
-        return alert_class(bot, alert_id, alert_type, data, meta)
+        
+        logger.warn(f"{get_alert_class_name(alert_type)} wasn't found! 'GenericAlert' used instead...")
+        return GenericAlert(bot, alert_id, alert_type, data, meta)
 
 #=============================================================================================
 #=============================================================================================
