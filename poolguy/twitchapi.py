@@ -1,6 +1,6 @@
 import requests
 from .utils import json, os, aiohttp, ColorLogger, datetime
-from .twitchhttp import RequestHandler
+from .twitchhttp import RequestHandler, urlparse, urlencode
 logger = ColorLogger(__name__)
 
 apiUrlPrefix = "https://api.twitch.tv/helix"
@@ -131,7 +131,7 @@ class TwitchApi(RequestHandler):
                 "transport": {'method': 'websocket', 'session_id': session_id}
             }
             r = await self.api_request("post", apiEndpoints['eventsub'], data=json.dumps(data))
-            logger.debug(f"Edata: \n{json.dumps(data)}")
+            logger.debug(f"data: \n{json.dumps(data)}")
             logger.debug(f"response: \n{r}")
             return r
         except Exception as e:
@@ -469,10 +469,20 @@ class TwitchApi(RequestHandler):
         
     #============================================================================
     # Stream Methods ================================================================
-    async def getStreams(self, **kwargs):
-        # Supports multiple optional parameters: game_id, language, user_id, user_login
-        r = await self.api_request("get", apiEndpoints['streams'], params=kwargs)
-        return r['data']
+    async def getStreams(self, first=100, **kwargs):
+        kwargs['first'] = first
+        query_string = urlencode(kwargs, doseq=True)
+        baseurl = f"{apiEndpoints['streams']}?{query_string}"
+        r = await self.api_request("get", baseurl)
+        data = r['data']
+        page = r['pagination']
+        while "cursor" in page:
+            nurl = baseurl + f'&after={page['cursor']}'
+            r = await self.api_request("get", nurl)
+            s = r['data']
+            page = r['pagination']
+            data += r['data']
+        return data
 
     async def getFollowedStreams(self, user_id=None, first=20):
         params = {
@@ -573,6 +583,7 @@ class TwitchApi(RequestHandler):
             if sub['status'] == "enabled":
                 continue
             else:
+                logger.info(f"{sub['type']}: {sub['condition']}")
                 await self.deleteEventSub(sub['id'])
         logger.warning(f"Removed all inactive websocket subs")
 

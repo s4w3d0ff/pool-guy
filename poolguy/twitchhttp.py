@@ -6,8 +6,8 @@ from .utils import aiohttp, ColorLogger, asyncio, closeBrowser
 logger = ColorLogger(__name__)
 
 tokenEndpoint = "https://id.twitch.tv/oauth2/token"
-oauthEndpoint="https://id.twitch.tv/oauth2/authorize"
-validateEndoint="https://id.twitch.tv/oauth2/validate"
+oauthEndpoint = "https://id.twitch.tv/oauth2/authorize"
+validateEndoint = "https://id.twitch.tv/oauth2/validate"
 
 class RequestHandler:
     def __init__(self, client_id, client_secret, redirect_uri, scopes, app=None):
