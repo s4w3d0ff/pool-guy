@@ -71,6 +71,7 @@ class RequestHandler:
 
     async def login(self):
         await self.start_oauth_flow()
+        await self.validate_auth()
         # Get login info
         r = await self.getUsers()
         self.login_info = r[0]
@@ -120,7 +121,7 @@ class RequestHandler:
                     "refresh_token": token_data['refresh_token']
                 }
                 logger.info("OAuth token refreshed.")
-
+                await self.validate_auth()
                 return self.token
 
     async def api_request(self, method, url, *args, **kwargs):
