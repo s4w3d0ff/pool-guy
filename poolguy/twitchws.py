@@ -59,6 +59,7 @@ class TwitchWS:
         logger.warning(f"Session welcome recieved")
         if not self.session_id:
             self.session_id = payload['session']['id']
+            logger.warning(f"session_id: {self.session_id}")
             await self.after_init_welcome()
 
     async def handle_session_reconnect(self, metadata, payload):

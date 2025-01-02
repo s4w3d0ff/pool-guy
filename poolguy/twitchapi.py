@@ -140,10 +140,11 @@ class TwitchApi(RequestHandler):
             raise
 
     async def deleteEventSub(self, id):
-        r = await self.api_request("delete", f"{apiEndpoints['eventsub']}/{id}")
-        if r.status != 204:
+        try:
+            r = await self.api_request("delete", f"{apiEndpoints['eventsub']}/{id}")
+            return True
+        except:
             return False
-        return True
 
     async def getEventSubs(self, status=None, type=None):
         params = {}
