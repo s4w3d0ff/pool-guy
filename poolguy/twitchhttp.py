@@ -7,6 +7,7 @@ logger = ColorLogger(__name__)
 
 tokenEndpoint = "https://id.twitch.tv/oauth2/token"
 oauthEndpoint="https://id.twitch.tv/oauth2/authorize"
+validateEndoint="https://id.twitch.tv/oauth2/validate"
 
 class RequestHandler:
     def __init__(self, client_id, client_secret, redirect_uri, scopes, app=None):
@@ -71,9 +72,10 @@ class RequestHandler:
     async def login(self):
         await self.start_oauth_flow()
         # Get login info
-        self.login_info = await self.getUser()[0]
+        r = await self.getUsers()
+        self.login_info = r[0]
         self.user_id = self.login_info['id']
-        logger.warn(f'Logged in as {self.login_info}')
+        logger.warning(f'Logged in as {self.login_info}')
 
     def get_auth_url(self):
         """Generates the OAuth authorization URL."""
@@ -92,6 +94,10 @@ class RequestHandler:
             'Content-Type': 'application/json',
             'Authorization': f'Bearer {self.token.get("access_token")}'
         }
+    
+    async def validate_auth(self):
+        auth_check = await self.api_request("GET", validateEndoint)
+        logger.info(f"Auth validation response: {auth_check}")
 
     async def refresh_oauth_token(self):
         """Refreshes the OAuth token using the refresh token."""
@@ -114,6 +120,7 @@ class RequestHandler:
                     "refresh_token": token_data['refresh_token']
                 }
                 logger.info("OAuth token refreshed.")
+
                 return self.token
 
     async def api_request(self, method, url, *args, **kwargs):
@@ -122,17 +129,18 @@ class RequestHandler:
         async with aiohttp.ClientSession() as session:
             async with session.request(method, url, *args, **kwargs) as response:
                 logger.info(f"[{method}] {url} [{response.status}]")
-                if response.status == 401:
-                    logger.error("Token expired, refreshing...")
-                    await self.refresh_oauth_token()
-                    kwargs['headers']['Authorization'] = f'Bearer {self.token["access_token"]}'
-                    return await self.api_request(method, url, *args, **kwargs)
-                elif response.status == 429:
-                    ratelimit_reset = int(response.headers.get('Ratelimit-Reset'))
-                    wait_time = ratelimit_reset - int(time.time()) + 3
-                    logger.warning(f"Rate limited, waiting {wait_time}s")
-                    await asyncio.sleep(wait_time)
-                    return await self.api_request(method, url, *args, **kwargs)
+                match response.status:
+                    case 401:
+                        logger.error("Token expired, refreshing...")
+                        await self.refresh_oauth_token()
+                        kwargs['headers']['Authorization'] = f'Bearer {self.token["access_token"]}'
+                        return await self.api_request(method, url, *args, **kwargs)
+                    case 429:
+                        ratelimit_reset = int(response.headers.get('Ratelimit-Reset'))
+                        wait_time = ratelimit_reset - int(time.time()) + 3
+                        logger.warning(f"Rate limited, waiting {wait_time}s")
+                        await asyncio.sleep(wait_time)
+                        return await self.api_request(method, url, *args, **kwargs)
                 response.raise_for_status()
                 try:
                     return await response.json()

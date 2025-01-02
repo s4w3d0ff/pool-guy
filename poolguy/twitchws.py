@@ -11,7 +11,7 @@ websocketURL = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=600"
 
 
 class TwitchWS:
-    def __init__(self, bot=None, http=None, queue=None, creds={}, channels={"channel.chat.message"}, queue_skip={"channel.chat.message"}, storage_type='json'):
+    def __init__(self, bot=None, http=None, queue=None, creds={}, channels={"channel.chat.message": [None]}, queue_skip={"channel.chat.message"}, storage_type='json'):
         self.bot = bot
         self.http = http or TwitchApi(**creds)
         self.alert_queue = queue or AlertQueue(bot=bot, storage_type=storage_type)
@@ -36,21 +36,22 @@ class TwitchWS:
                 raise e
             await asyncio.sleep(0.1)
 
-     async def close(self):
+    async def close(self):
         self.is_running = False
         self.connected = False
         await self.socket.close()
         self.socket = None
 
     async def run(self):
-        await self.socket_loop():
+        await self.socket_loop()
 
     async def after_init_welcome(self):
         logger.warning(f"Clearing orphaned event subs")
         await self.http.unsubAllEvents()
-        logger.warning(f"Subscribing websocket")
+        logger.warning(f"Subscribing websocket to: {self.channels}")
         for chan in self.channels:
-            await self.http.createEventSub(chan, self.session_id)
+            for i in self.channels[chan]:
+                await self.http.createEventSub(chan, self.session_id, i)
             await asyncio.sleep(0.2)
         logger.warning(f"Subscribed websocket to:\n{json.dumps(list(self.channels), indent=2)}")
 
@@ -189,13 +190,13 @@ class AlertFactory:
 #=============================================================================================
 #=============================================================================================
 class AlertQueue:
-    def __init__(self, bot, storage_type='json', storage_dir='twitch_alerts', db_name='alerts.db'):
+    def __init__(self, bot, **kwargs):
         self.bot = bot
         self.queue = asyncio.Queue()
         self.is_processing = True
         self.is_running = False
         self._current_id = 0
-        self.storage = StorageFactory.create_storage(storage_type, storage_dir=storage_dir, db_name=db_name)
+        self.storage = StorageFactory.create_storage(**kwargs)
 
     async def process_alerts(self):
         self.is_running = True
