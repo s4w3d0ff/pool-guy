@@ -130,7 +130,7 @@ class TwitchApi(RequestHandler):
                 "condition": condition,
                 "transport": {'method': 'websocket', 'session_id': session_id}
             }
-            r = await self.api_request("post", apiEndpoints['eventsub'], data=data)
+            r = await self.api_request("post", apiEndpoints['eventsub'], data=json.dumps(data))
             logger.info(f"EventSub request data: \n{json.dumps(data)}")
             logger.info(f"EventSub response: \n{r}")
             return r
@@ -140,10 +140,11 @@ class TwitchApi(RequestHandler):
             raise
 
     async def deleteEventSub(self, id):
-        r = await self.api_request("delete", f"{apiEndpoints['eventsub']}/{id}")
-        if r.status != 204:
+        try:
+            r = await self.api_request("delete", f"{apiEndpoints['eventsub']}/{id}")
+            return True
+        except:
             return False
-        return True
 
     async def getEventSubs(self, status=None, type=None):
         params = {}
