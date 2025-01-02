@@ -1,3 +1,4 @@
+import requests
 from .utils import json, os, aiohttp, ColorLogger, datetime
 from .twitchhttp import RequestHandler
 logger = ColorLogger(__name__)
@@ -65,11 +66,11 @@ def fetch_eventsub_types(dir="db/eventsub_versions"):
     from bs4 import BeautifulSoup
     # Ensure db directory exists
     os.makedirs(dir, exist_ok=True)
-    response = request.get(eventsubdocurl)
-    logger.info(f"[GET] {eventsubdocurl} [{response.status}]")
-    if response.status != 200:
+    response = requests.get(eventsubdocurl)
+    logger.info(f"[GET] {eventsubdocurl} [{response.status_code}]")
+    if response.status_code != 200:
         raise Exception("Failed to fetch webpage")
-    text = response.text()
+    text = response.text
     soup = BeautifulSoup(text, "html.parser")
     eventsub_types = {}
     # Locate the table containing subscription types
@@ -96,43 +97,53 @@ eventChannels = fetch_eventsub_types()
 class TwitchApi(RequestHandler):
     #============================================================================
     # EventSub Methods ================================================================
-    async def createEventSub(self, event, session_id):
+    async def createEventSub(self, event, session_id, bid=None):
         uid = str(self.user_id)
+        if bid:
+            bid = str(bid)
         match event:
             case 'channel.follow':
-                condition = {'broadcaster_user_id': uid, 'moderator_user_id': uid}
+                condition = {'broadcaster_user_id': bid or uid, 'moderator_user_id': uid}
             case 'channel.chat.message':
-                condition = {'broadcaster_user_id': uid, 'user_id': uid}
+                condition = {'broadcaster_user_id': bid or uid, 'user_id': uid}
             case 'channel.chat.clear':
-                condition = {'broadcaster_user_id': uid, 'user_id': uid}
+                condition = {'broadcaster_user_id': bid or uid, 'user_id': uid}
             case 'channel.raid':
                 condition = {'to_broadcaster_user_id': uid}
             case 'channel.shield_mode.begin':
-                condition = {'broadcaster_user_id': uid, 'moderator_user_id': uid}
+                condition = {'broadcaster_user_id': bid or uid, 'moderator_user_id': uid}
             case 'channel.shield_mode.end':
-                condition = {'broadcaster_user_id': uid, 'moderator_user_id': uid}
+                condition = {'broadcaster_user_id': bid or uid, 'moderator_user_id': uid}
             case 'user.update':
                 condition = {'user_id': uid}
             case 'user.authorization.grant':
-                condition = {'client_id': self.client_id}
+                condition = {'client_id': str(self.client_id)}
             case 'user.authorization.revoke':
-                condition = {'client_id': self.client_id}
+                condition = {'client_id': str(self.client_id)}
             case _:
-                condition = {'broadcaster_user_id': uid}
-
-        data = {
-            "type": event,
-            "version": str(eventChannels[event]),
-            "condition": condition,
-            "transport": {'method': 'websocket', 'session_id': session_id}
-        }
-        
-        r = await self.api_request("post", apiEndpoints['eventsub'], data=data)
-        return r['data']
+                condition = {'broadcaster_user_id': bid or uid}
+        logger.warning(f'{condition}')
+        try:
+            data = {
+                "type": event,
+                "version": str(eventChannels[event]),
+                "condition": condition,
+                "transport": {'method': 'websocket', 'session_id': session_id}
+            }
+            r = await self.api_request("post", apiEndpoints['eventsub'], data=data)
+            logger.info(f"EventSub request data: \n{json.dumps(data)}")
+            logger.info(f"EventSub response: \n{r}")
+            return r
+        except Exception as e:
+            logger.error(f"Failed to create EventSub subscription: \n{e}")
+            logger.error(f"Request data was: \n{json.dumps(data)}")
+            raise
 
     async def deleteEventSub(self, id):
         r = await self.api_request("delete", f"{apiEndpoints['eventsub']}/{id}")
-        return r['data']
+        if r.status != 204:
+            return False
+        return True
 
     async def getEventSubs(self, status=None, type=None):
         params = {}
@@ -141,7 +152,7 @@ class TwitchApi(RequestHandler):
         if type:
             params["type"] = type
         r = await self.api_request("get", apiEndpoints['eventsub'], params=params)
-        return r['data']
+        return r
     
     #============================================================================
     # Channel Methods ================================================================
@@ -165,18 +176,13 @@ class TwitchApi(RequestHandler):
             return r['data']
         params = {"broadcaster_id": broadcaster_id or self.user_id, "first":100}
         r = await self.api_request("get", apiEndpoints['followers'], params=params)
-        s = r['data']
         page = r['pagination']
-        followers = []
-        for i in s:
-            followers.append(i[user_name])
+        followers = r['data']
         while "cursor" in page:
             params['after'] = page['cursor']
             r = await self.api_request("get", apiEndpoints['followers'], params=params)
-            s = r['data']
             page = r['pagination']
-            for i in s:
-                followers.append(i[user_name])
+            followers += r['data']
         return followers
 
     #============================================================================
