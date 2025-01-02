@@ -71,11 +71,9 @@ class RequestHandler:
 
     async def login(self):
         await self.start_oauth_flow()
-        await self.validate_auth()
-        # Get login info
-        r = await self.getUsers()
-        self.login_info = r[0]
-        self.user_id = self.login_info['id']
+        # Get login info/validate
+        self.login_info = await self.validate_auth()
+        self.user_id = self.login_info['user_id']
         logger.warning(f'Logged in as {self.login_info}')
 
     def get_auth_url(self):
@@ -99,6 +97,7 @@ class RequestHandler:
     async def validate_auth(self):
         auth_check = await self.api_request("GET", validateEndoint)
         logger.info(f"Auth validation response: {auth_check}")
+        return auth_check
 
     async def refresh_oauth_token(self):
         """Refreshes the OAuth token using the refresh token."""
@@ -120,7 +119,7 @@ class RequestHandler:
                     "access_token": token_data['access_token'],
                     "refresh_token": token_data['refresh_token']
                 }
-                logger.info("OAuth token refreshed.")
+                logger.warning("OAuth token refreshed.")
                 await self.validate_auth()
                 return self.token
 
@@ -129,7 +128,7 @@ class RequestHandler:
         kwargs['headers'] = self.get_headers()
         async with aiohttp.ClientSession() as session:
             async with session.request(method, url, *args, **kwargs) as response:
-                logger.info(f"[{method}] {url} [{response.status}]")
+                logger.debug(f"[{method}] {url} [{response.status}]")
                 match response.status:
                     case 401:
                         logger.error("Token expired, refreshing...")
@@ -145,6 +144,6 @@ class RequestHandler:
                 response.raise_for_status()
                 try:
                     return await response.json()
-                except Exception as e:
-                    logger.error(f"Error decoding JSON: {e}")
+                except:
+                    logger.debug(f"Error decoding JSON, returned full response.")
                     return response

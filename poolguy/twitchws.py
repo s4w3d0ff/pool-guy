@@ -162,6 +162,10 @@ class GenericAlert(Alert):
     """Generic alert class for handling unknown alert types."""
     def __init__(self, bot, alert_id, alert_type, data, meta):
         super().__init__(bot, alert_id, alert_type, data, meta)
+    
+    def register_routes(self):
+        logger.debug(f"register_routes: No routes to register")
+    
     async def process(self):
         """Process a generic alert."""
         logger.warn(f"Processing generic alert {self.aid} of type {self.atype}")
@@ -174,11 +178,11 @@ class AlertFactory:
     """Factory class to create the appropriate Alert instance based on event type."""
     @staticmethod
     def create_alert(bot, alert_id, alert_type, data, meta):
+        """Create an appropriate Alert instance based on the alert type."""
         def get_alert_class_name(event_type):
             parts = event_type.split('.')
             class_parts = [part.title().replace('-', '') for part in parts]
             return ''.join(class_parts) + 'Alert'
-        """Create an appropriate Alert instance based on the alert type."""
         class_name = get_alert_class_name(alert_type)
         # Get the actual class from globals()
         alert_class = globals().get(class_name)

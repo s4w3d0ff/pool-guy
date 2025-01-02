@@ -122,7 +122,7 @@ class TwitchApi(RequestHandler):
                 condition = {'client_id': str(self.client_id)}
             case _:
                 condition = {'broadcaster_user_id': bid or uid}
-        logger.warning(f'{condition}')
+        logger.info(f'[createEventSub]-> {event} condition:{condition}')
         try:
             data = {
                 "type": event,
@@ -131,8 +131,8 @@ class TwitchApi(RequestHandler):
                 "transport": {'method': 'websocket', 'session_id': session_id}
             }
             r = await self.api_request("post", apiEndpoints['eventsub'], data=json.dumps(data))
-            logger.info(f"EventSub request data: \n{json.dumps(data)}")
-            logger.info(f"EventSub response: \n{r}")
+            logger.debug(f"Edata: \n{json.dumps(data)}")
+            logger.debug(f"response: \n{r}")
             return r
         except Exception as e:
             logger.error(f"Failed to create EventSub subscription: \n{e}")
@@ -141,7 +141,7 @@ class TwitchApi(RequestHandler):
 
     async def deleteEventSub(self, id):
         try:
-            r = await self.api_request("delete", f"{apiEndpoints['eventsub']}/{id}")
+            r = await self.api_request("delete", f"{apiEndpoints['eventsub']}?id={id}")
             return True
         except:
             return False
