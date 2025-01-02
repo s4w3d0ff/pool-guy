@@ -96,7 +96,7 @@ class TwitchWS:
                     noto_type = msg['payload']['subscription']['type']
                     noto_event = msg["payload"]['event']
                     if self.alert_queue:
-                        if noto_type in sef.queue_skip:
+                        if noto_type in self.queue_skip:
                             alert = AlertFactory.create_alert(
                                     bot=self.bot,
                                     alert_id=None,
@@ -172,15 +172,14 @@ class GenericAlert(Alert):
 #=============================================================================================
 class AlertFactory:
     """Factory class to create the appropriate Alert instance based on event type."""
-    def get_alert_class_name(self, event_type):
-        parts = event_type.split('.')
-        class_parts = [part.title().replace('-', '') for part in parts]
-        return ''.join(class_parts) + 'Alert'
-
     @staticmethod
     def create_alert(bot, alert_id, alert_type, data, meta):
+        def get_alert_class_name(event_type):
+            parts = event_type.split('.')
+            class_parts = [part.title().replace('-', '') for part in parts]
+            return ''.join(class_parts) + 'Alert'
         """Create an appropriate Alert instance based on the alert type."""
-        class_name = self.get_alert_class_name(alert_type)
+        class_name = get_alert_class_name(alert_type)
         # Get the actual class from globals()
         alert_class = globals().get(class_name)
         if alert_class is None:

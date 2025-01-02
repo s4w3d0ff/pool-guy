@@ -64,6 +64,9 @@ class ColorLogger():
     def warning(self, msg, c='blue', b='black', s='b', *args, **kwargs):
         self._l.warning(ctxt(msg, c, b, s), *args, **kwargs)
 
+    def warn(self, msg, c='blue', b='black', s='b', *args, **kwargs):
+        self._l.warning(ctxt(msg, c, b, s), *args, **kwargs)
+
     def error(self, msg, c='yellow', b='black', s='b', *args, **kwargs):
         self._l.error(ctxt(msg, c, b, s), *args, **kwargs)
 
