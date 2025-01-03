@@ -3,15 +3,12 @@ import random, string, os
 import asyncio, re
 import webbrowser
 import websockets
-import keyboard
-import threading
 import aiohttp
 import quart
 from abc import ABC, abstractmethod
-from urllib.parse import urlparse, urlencode
-from pydub import AudioSegment, playback
-from dateutil import parser
 from collections import OrderedDict
+from urllib.parse import urlparse, urlencode
+from dateutil import parser
 from datetime import datetime
 
 closeBrowser = """
@@ -32,11 +29,6 @@ closeBrowser = """
     </body>
 </html>
 """
-
-def randString(length=12):
-    chars = string.ascii_letters + string.digits
-    ranstr = ''.join(random.choice(chars) for _ in range(length))
-    return ranstr
     
 def ctxt(text, color='white', bg='black', style='n'):
     s = {
@@ -77,6 +69,12 @@ class ColorLogger():
 
 logger = ColorLogger(__name__)
 
+
+def randString(length=12):
+    chars = string.ascii_letters + string.digits
+    ranstr = ''.join(random.choice(chars) for _ in range(length))
+    return ranstr
+
 def updateFile(file_path, text):
     with open(file_path, "w") as file:
         file.write(text)
@@ -108,41 +106,6 @@ def randomchars(length):
 def randomfile(dir):
     files = [f for f in os.listdir(dir)]
     return os.path.join(dir, random.choice(files))
-
-def play_sound(sound, gain=0):
-    logger.debug(f"[play_sound] -> {sound}")
-    seg = AudioSegment.from_file(sound)
-    s = seg.apply_gain(gain)
-    threading.Thread(target=playback.play, args=(s,)).start()
-
-async def soundOnKey(key="space", sound="fart1.wav", duration=30, gain=0):
-    start = time.time()
-    logger.debug(f"[soundOnKey] -> ({key}):{sound} -{duration}sec-")
-    played = False
-    while time.time()-start < duration:
-        if keyboard.is_pressed(key):
-            if not played:
-                played = True
-                play_sound(sound, gain)
-        else:
-            played = False
-        await asyncio.sleep(0.05)
-    logger.debug(f"[soundOnKey] -> ({key}):{sound} -complete-")
-
-
-async def randSoundOnKey(key="space", folder="farts", duration=30, gain=0):
-    start = time.time()
-    logger.debug(f"[randomSoundOnKey] -> ({key}):{folder} -{duration}sec-")
-    played = False
-    while time.time()-start < duration:
-        if keyboard.is_pressed(key):
-            if not played:
-                played = True
-                play_sound(randomfile(folder), gain)
-        else:
-            played = False
-        await asyncio.sleep(0.05)
-    logger.debug(f"[soundOnKey] -> ({key}):{folder} -complete-")
 
 class MaxSizeDict(OrderedDict):
     def __init__(self, max_size):

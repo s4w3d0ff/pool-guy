@@ -1,4 +1,4 @@
-from .utils import json, os, aiohttp
+from .utils import json, os, aiohttp, re
 from .utils import ColorLogger, datetime
 from .twitchhttp import RequestHandler, urlparse, urlencode
 
