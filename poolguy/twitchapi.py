@@ -1,6 +1,7 @@
-import requests
-from .utils import json, os, aiohttp, ColorLogger, datetime
+from .utils import json, os, aiohttp
+from .utils import ColorLogger, datetime
 from .twitchhttp import RequestHandler, urlparse, urlencode
+
 logger = ColorLogger(__name__)
 
 apiUrlPrefix = "https://api.twitch.tv/helix"
@@ -63,6 +64,7 @@ def fetch_eventsub_types(dir="db/eventsub_versions"):
         # Load and return existing data
         with open(get_json_filename(), 'r') as f:
             return json.load(f)
+    import requests
     from bs4 import BeautifulSoup
     # Ensure db directory exists
     os.makedirs(dir, exist_ok=True)
@@ -122,7 +124,7 @@ class TwitchApi(RequestHandler):
                 condition = {'client_id': str(self.client_id)}
             case _:
                 condition = {'broadcaster_user_id': bid or uid}
-        logger.info(f'[createEventSub]-> {event} condition:{condition}')
+        logger.info(f'[createEventSub] -> {event} condition:{condition}')
         try:
             data = {
                 "type": event,
@@ -583,7 +585,7 @@ class TwitchApi(RequestHandler):
             if sub['status'] == "enabled":
                 continue
             else:
-                logger.info(f"{sub['type']}: {sub['condition']}")
+                logger.info(f"{sub['type']}[{sub['status']}]: {sub['condition']}")
                 await self.deleteEventSub(sub['id'])
         logger.warning(f"Removed all inactive websocket subs")
 

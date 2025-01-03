@@ -1,10 +1,14 @@
 import logging, json, time
 import random, string, os
-import asyncio, requests, re
-import spacy
+import asyncio, re
+import webbrowser
+import websockets
 import keyboard
 import threading
 import aiohttp
+import quart
+from abc import ABC, abstractmethod
+from urllib.parse import urlparse, urlencode
 from pydub import AudioSegment, playback
 from dateutil import parser
 from collections import OrderedDict
@@ -28,8 +32,6 @@ closeBrowser = """
     </body>
 </html>
 """
-
-nlp = spacy.load("en_core_web_sm")
 
 def randString(length=12):
     chars = string.ascii_letters + string.digits
@@ -141,23 +143,6 @@ async def randSoundOnKey(key="space", folder="farts", duration=30, gain=0):
             played = False
         await asyncio.sleep(0.05)
     logger.debug(f"[soundOnKey] -> ({key}):{folder} -complete-")
-
-
-def replace_random_noun_chunk(text, replacement="these walnuts"):
-    doc = nlp(text)
-    noun_chunks = list(doc.noun_chunks)
-    if not noun_chunks:
-        out = None
-    else:
-        to_replace = random.choice(noun_chunks)
-        start = to_replace.start_char
-        end = to_replace.end_char
-        out = text[:start] + replacement + text[end:]
-        if out.strip() == replacement.strip():
-            out = None
-    logger.debug(f"[replace_random_noun_chunk] {text} -> {out}")
-    return out
-
 
 class MaxSizeDict(OrderedDict):
     def __init__(self, max_size):
