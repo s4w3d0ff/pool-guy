@@ -1,7 +1,6 @@
-import webbrowser
 from quart import Quart, request
-from urllib.parse import urlparse, urlencode
-from .utils import aiohttp, ColorLogger, asyncio, closeBrowser
+from .utils import aiohttp, asyncio, webbrowser
+from .utils import ColorLogger, closeBrowser, urlparse, urlencode
 
 logger = ColorLogger(__name__)
 

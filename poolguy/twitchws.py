@@ -1,14 +1,11 @@
-import websockets
-from abc import ABC, abstractmethod
-from .utils import json, asyncio
-from .utils import MaxSizeDict, ColorLogger
+from .utils import json, asyncio, websockets
+from .utils import MaxSizeDict, ColorLogger, ABC, abstractmethod
 from .twitchstorage import StorageFactory
 from .twitchapi import TwitchApi
 
 logger = ColorLogger(__name__)
 
 websocketURL = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=600"
-
 
 class TwitchWS:
     def __init__(self, bot=None, http=None, queue=None, creds={}, channels={"channel.chat.message": [None]}, queue_skip={"channel.chat.message"}, storage_type='json'):

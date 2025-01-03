@@ -1,35 +1,41 @@
 from .utils import asyncio, ColorLogger
-from .twitchws import Alert, TwitchWS
+from .twitchws import Alert, TwitchWS, AlertFactory
 from .twitchapi import TwitchApi
 
 logger = ColorLogger(__name__)
 
 class TwitchBot:
-    def __init__(self, creds={}, channels={"channel.chat.message": [None]}, queue_skip={"channel.chat.message"}, storage_type='json'):
-        self.ws = TwitchWS(bot=self, creds=creds, channels=channels, queue_skip=queue_skip, storage_type=storage_type)
+    def __init__(self, http_creds={}, ws_config={}, alert_objs={}):
+        self.ws = TwitchWS(bot=self, creds=http_creds, **ws_config)
         self.http = self.ws.http
         self.app = self.ws.http.app
         self._tasks = []
-        self._register_callback_route()
+        self.register_routes()
+        if alert_objs:
+            for key, value in alert_objs.items():
+                self.register_alert_class(key, value)
 
+    async def add_task(self, coro, *args, **kwargs):
+        """ Adds a task to our list of tasks """
+        self._tasks.append(asyncio.create_task(coro(*args, **kwargs)))
+    
+    def register_alert_class(self, name, obj):
+        """ Adds alert classes to the AlertFactory cache """
+        AlertFactory.register_alert_class(name, obj)
+        
     async def start(self, hold=False):
         # start webserver
-        self._tasks.append(asyncio.create_task(self.app.run_task(
-                host=self.http.host, 
-                port=self.http.port)))
+        await self.add_task(self.app.run_task, host=self.http.host, port=self.http.port)
         # wait for login
         await self.http.login()
         # start websocket connection and queue
-        self._tasks.append(asyncio.create_task(self.ws.alert_queue.process_alerts()))
-        self._tasks.append(asyncio.create_task(self.ws.run()))
+        await self.add_task(self.ws.alert_queue.process_alerts)
+        await self.add_task(self.ws.run)
         await asyncio.sleep(0.5)
         await self.after_init()
         if hold:
             # wait/block until tasks complete (should run forever)
             await self.hold()
-
-    async def after_init(self):
-        pass
 
     async def hold(self):
         try:
@@ -39,34 +45,10 @@ class TwitchBot:
             await self.ws.close()
             raise e
 
-    def _register_callback_route(self):
-        @self.app.route('/')
-        async def index():
-            if not self.http.token:
-                await self.start()
-    #================================================
-    #================================================
-        @self.app.route('/hidescene/<source>')
-        async def hide_source(source):
-            """ route to hide a scene """
-            r = self.obsws.hideSource(source)
-            return jsonify(r)
+    async def after_init(self):
+        """ Used to execute logic after the webserver and websocket are running and the bot is logged in """
+        pass
 
-        @self.app.route('/showscene/<source>')
-        async def show_source(source):
-            """ route to show a scene """
-            r = self.obsws.showSource(source)
-            return jsonify(r)
-
-        @self.app.route('/alertqueue/<action>')
-        async def alert_queue(action):
-            match action:
-                case "pause":
-                    self.ws.alert_queue.pause()
-                case "resume":
-                    self.ws.alert_queue.resume()
-                case _:
-                    pass
-            return jsonify('')
-    #================================================
-    #================================================
+    def register_routes(self):
+        """ Used to register Quart app routes when TwitchBot inits """
+        pass
