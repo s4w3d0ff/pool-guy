@@ -128,10 +128,7 @@ class TwitchApi(RequestHandler):
                 "condition": condition,
                 "transport": {'method': 'websocket', 'session_id': session_id}
             }
-            r = await self.api_request("post", apiEndpoints['eventsub'], data=json.dumps(data))
-            logger.debug(f"data: \n{json.dumps(data)}")
-            logger.debug(f"response: \n{r}")
-            return r
+            return await self.api_request("post", apiEndpoints['eventsub'], data=json.dumps(data))
         except Exception as e:
             logger.error(f"Failed to create EventSub subscription: \n{e}")
             logger.error(f"Request data was: \n{json.dumps(data)}")
@@ -152,7 +149,18 @@ class TwitchApi(RequestHandler):
             params["type"] = type
         r = await self.api_request("get", apiEndpoints['eventsub'], params=params)
         return r
-    
+
+    #============================================================================
+    # Badges Methods ================================================================
+    async def getGlobalChatBadges(self):
+        r = await self.api_request("get", apiEndpoints['global_badges'])
+        return r['data']
+        
+    async def getChannelChatBadges(self, broadcaster_id=None):
+        params = {"broadcaster_id": broadcaster_id or self.user_id}
+        r = await self.api_request("get", apiEndpoints['channel_badges'], params=params)
+        return r['data']
+
     #============================================================================
     # Channel Methods ================================================================
     async def getChannelInfo(self, broadcaster_id=None):
@@ -499,13 +507,23 @@ class TwitchApi(RequestHandler):
         return r['data']
 
     async def getStreamMarkers(self, user_id=None, video_id=None, first=20):
+        url = apiEndpoints['stream_markers']
         params = {
             "user_id": user_id,
             "video_id": video_id,
             "first": first
         }
-        r = await self.api_request("get", apiEndpoints['stream_markers'], params=params)
-        return r['data']
+        r = await self.api_request("get", url, params=params)
+        return r['data'] + await self._continuePage("get", url, r['page'], params=params)
+    
+    async def _continuePage(self, method, url, page, **kwargs):
+        out = []
+        while "cursor" in page:
+            params['after'] = cursor
+            r = await self.api_request(method, url, **kwargs)
+            out += r['data']
+            page = r['pagination']
+        return out
         
     #============================================================================
     # Subscription Methods ================================================================
