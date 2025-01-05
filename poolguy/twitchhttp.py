@@ -22,7 +22,7 @@ class RequestHandler:
         self.user_id = None
         # Parse redirect URI to get host, port, and path
         parsed_uri = urlparse(redirect_uri)
-        self.callback_path = parsed_uri.path.lstrip('/')  # Remove leading slash (why?)
+        self.callback_path = parsed_uri.path.lstrip('/')
         self.host = parsed_uri.hostname
         self.port = parsed_uri.port
         # Register callback route
