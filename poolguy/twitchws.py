@@ -47,8 +47,11 @@ class TwitchWS:
         await self.http.unsubAllEvents()
         logger.warning(f"Subscribing websocket to: {self.channels}")
         for chan in self.channels:
-            for i in self.channels[chan]:
-                await self.http.createEventSub(chan, self.session_id, i)
+            if isinstance(self.channels[chan], list):
+                for i in self.channels[chan]:
+                    await self.http.createEventSub(chan, self.session_id, i)
+            else:
+                await self.http.createEventSub(chan, self.session_id)
             await asyncio.sleep(0.2)
         logger.warning(f"Subscribed websocket to:\n{json.dumps(list(self.channels), indent=2)}")
 
@@ -122,11 +125,9 @@ class Alert(ABC):
         self.atype = alert_type
         self.data = data
         self.meta = meta
-
         # Register the routes
         self.register_routes()
-    
-    @abstractmethod
+
     def register_routes(self):
         pass
         
