@@ -4,7 +4,8 @@ import asyncio, re
 import webbrowser
 import websockets
 import aiohttp
-import quart
+from quart import Quart, request, jsonify, redirect, render_template
+from quart import websocket as quartws
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from urllib.parse import urlparse, urlencode
@@ -83,14 +84,14 @@ def loadJSON(filename):
     """ Load json file """
     with open(filename, 'r') as f:
         out = json.load(f)
-        logger.debug(f"[loadJSON] {filename} -> {out}")
+        logger.debug(f"[loadJSON] {filename}")
         return out
 
 def saveJSON(data, filename):
     """ Save data as json to a file """
     with open(filename, 'w') as f:
         out = json.dump(data, f, indent=4)
-        logger.debug(f"[saveJSON] {filename} -> {out}")
+        logger.debug(f"[saveJSON] {filename}")
         return out
 
 def delete_file_if_exists(file_path):

@@ -1,4 +1,4 @@
-from .utils import json, asyncio, websockets
+from .utils import json, asyncio, websockets, time
 from .utils import MaxSizeDict, ColorLogger, ABC, abstractmethod
 from .twitchstorage import StorageFactory
 from .twitchapi import TwitchApi
@@ -18,6 +18,19 @@ class TwitchWS:
         self.connected = False
         self.session_id = None
         self.seen_messages = MaxSizeDict(42)
+        self._queue_task = None
+        self._socket_task = None
+
+    def register_alert_class(self, name, obj):
+        """ Adds alert classes to the AlertFactory cache """
+        AlertFactory.register_alert_class(name, obj)
+
+    async def run(self, login_browser=None):
+        await self.http.login(login_browser)
+        if not self._socket_task:
+            self._queue_task = asyncio.create_task(self.alert_queue.process_alerts())
+            self._socket_task = asyncio.create_task(self.socket_loop())
+        return [self.http._app_task, self._queue_task, self._socket_task]
 
     async def socket_loop(self):
         self.socket = await websockets.connect(websocketURL)
@@ -34,18 +47,25 @@ class TwitchWS:
             await asyncio.sleep(0.1)
 
     async def close(self):
-        self.is_running = False
+        # stop socket
         self.connected = False
-        await self.socket.close()
+        await self._socket_task
+        try:
+            await self.socket.close()
+        except Exception as e:
+            logger.error(f"[close] {e}")
         self.socket = None
-
-    async def run(self):
-        await self.socket_loop()
+        # stop queue
+        self.alert_queue.is_running = False
+        await self._queue_task
+        # stop quart app
+        await self.http.app.shutdown()
+        await self.http._app_task
+        
 
     async def after_init_welcome(self):
         logger.warning(f"Clearing orphaned event subs")
         await self.http.unsubAllEvents()
-        logger.warning(f"Subscribing websocket to: {self.channels}")
         for chan in self.channels:
             if isinstance(self.channels[chan], list):
                 for i in self.channels[chan]:
@@ -53,7 +73,7 @@ class TwitchWS:
             else:
                 await self.http.createEventSub(chan, self.session_id)
             await asyncio.sleep(0.2)
-        logger.warning(f"Subscribed websocket to:\n{json.dumps(list(self.channels), indent=2)}")
+        logger.warning(f"Subscribed websocket to:\n{json.dumps(list(self.channels.keys()), indent=2)}")
 
     async def handle_session_welcome(self, metadata, payload):
         logger.warning(f"Session welcome recieved")
@@ -205,7 +225,7 @@ class AlertQueue:
         self.queue = asyncio.Queue()
         self.is_processing = True
         self.is_running = False
-        self._current_id = 0
+        self._current_id = int("{:.6f}".format(time.time()).replace('.', ''))
         self.storage = StorageFactory.create_storage(**kwargs)
 
     async def process_alerts(self):
@@ -230,7 +250,7 @@ class AlertQueue:
                 break
             except Exception as e:
                 self.queue.task_done()
-                Logger.error(f"Error processing alert {alert_id}: {e}")
+                logger.error(f"Error processing alert {alert_id}: {e}")
 
     async def add_alert(self, alert_type, data, meta):
         self._current_id += 1

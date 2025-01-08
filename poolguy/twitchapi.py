@@ -1,6 +1,7 @@
-from .utils import json, os, aiohttp, re
+from .utils import json, os, aiohttp, re, asyncio
 from .utils import ColorLogger, datetime
 from .twitchhttp import RequestHandler, urlparse, urlencode
+from aiohttp import ClientResponseError
 
 logger = ColorLogger(__name__)
 
@@ -93,10 +94,16 @@ eventChannels = fetch_eventsub_types()
 
 
 class TwitchApi(RequestHandler):
+
     async def _continuePage(self, method, url, page, **kwargs):
         out = []
         while "cursor" in page:
-            params['after'] = cursor
+            if 'params' in kwargs:
+                kwargs['params']['after'] = page['cursor']
+            if 'data' in kwargs:
+                data = json.loads(kwargs['data'])
+                data['after'] = page['cursor']
+                kwargs['data'] = json.dumps(data)
             r = await self.api_request(method, url, **kwargs)
             out += r['data']
             page = r['pagination']
@@ -129,7 +136,7 @@ class TwitchApi(RequestHandler):
                 condition = {'client_id': str(self.client_id)}
             case _:
                 condition = {'broadcaster_user_id': bid or uid}
-        logger.info(f'[createEventSub] -> {event} condition:{condition}')
+        logger.info(f'[createEventSub] -> {event}: {condition}')
         try:
             data = {
                 "type": event,
@@ -197,11 +204,11 @@ class TwitchApi(RequestHandler):
 
     #============================================================================
     # Chat Methods ================================================================
-    async def sendChatMessage(self, message, broadcaster_id=None, sender_id=None):
+    async def sendChatMessage(self, message, broadcaster_id=None):
         data = {
             "broadcaster_id": broadcaster_id or self.user_id,
-            "sender_id": sender_id or self.user_id,
-            "message": message
+            "sender_id": self.user_id,
+            "message": message[:399] # 400 char limit
         }
         r = await self.api_request("post", apiEndpoints['chat'], data=json.dumps(data))
         return r['data']
@@ -604,16 +611,17 @@ class TwitchApi(RequestHandler):
         
     #=========================================================================
     # Extras ===================================================================
-
     async def unsubAllEvents(self):
         r = await self.getEventSubs()
+        tasks = []
         for sub in r['data']:
             if sub['status'] == "enabled":
                 continue
             else:
-                logger.info(f"{sub['type']}[{sub['status']}]: {sub['condition']}")
-                await self.deleteEventSub(sub['id'])
-        logger.warning(f"Removed all inactive websocket subs")
+                logger.info(f"[deleteEventSub]->{sub['type']} {sub['status']} {sub['condition']}")
+                tasks.append(asyncio.create_task(self.deleteEventSub(sub['id'])))
+        await asyncio.gather(*tasks)
+        logger.warning(f"Removed all inactive EventSub subscriptions")
 
     async def get7tvEmotes(self):
         cdnurl = "https://cdn.7tv.app/emote/"

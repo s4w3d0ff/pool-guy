@@ -1,5 +1,5 @@
 from .utils import asyncio, ColorLogger
-from .twitchws import Alert, TwitchWS, AlertFactory
+from .twitchws import Alert, TwitchWS
 from .twitchapi import TwitchApi
 
 logger = ColorLogger(__name__)
@@ -13,26 +13,31 @@ class TwitchBot:
         self.register_routes()
         if alert_objs:
             for key, value in alert_objs.items():
-                self.register_alert_class(key, value)
+                self.add_alert_class(key, value)
+        self.channelBadges = {}
+
+    async def getChanBadges(self, bid=None, size='image_url_4x'):
+        """badges = {set_id: {id: url,,,},,,}"""
+        r = await self.http.getGlobalChatBadges()
+        r += await self.http.getChannelChatBadges(bid)
+        badges = {}
+        for i in r:
+            badges[i['set_id']] = {b['id']: b[size] for b in i['versions']}
+        return badges
 
     async def add_task(self, coro, *args, **kwargs):
         """ Adds a task to our list of tasks """
         self._tasks.append(asyncio.create_task(coro(*args, **kwargs)))
     
-    def register_alert_class(self, name, obj):
+    def add_alert_class(self, name, obj):
         """ Adds alert classes to the AlertFactory cache """
-        AlertFactory.register_alert_class(name, obj)
+        self.ws.register_alert_class(name, obj)
         
-    async def start(self, hold=False):
-        # start webserver
-        await self.add_task(self.app.run_task, host=self.http.host, port=self.http.port)
-        # wait for login
-        await self.http.login()
-        # start websocket connection and queue
-        await self.add_task(self.ws.alert_queue.process_alerts)
-        await self.add_task(self.ws.run)
-        await asyncio.sleep(0.5)
-        await self.after_init()
+    async def start(self, hold=False, login_browser=None):
+        # start OAuth, websocket connection, and queue
+        self._tasks = await self.ws.run(login_browser)
+        self.channelBadges[str(self.http.user_id)] = await self.getChanBadges()
+        await self.after_login()
         if hold:
             # wait/block until tasks complete (should run forever)
             await self.hold()
@@ -45,7 +50,7 @@ class TwitchBot:
             await self.ws.close()
             raise e
 
-    async def after_init(self):
+    async def after_login(self):
         """ Used to execute logic after the webserver and websocket are running and the bot is logged in """
         pass
 
