@@ -1,5 +1,5 @@
-from quart import Quart, request
-from .utils import aiohttp, asyncio, webbrowser
+from .utils import Quart, request
+from .utils import aiohttp, asyncio, webbrowser, json
 from .utils import ColorLogger, closeBrowser, urlparse, urlencode
 
 logger = ColorLogger(__name__)
@@ -22,9 +22,10 @@ class RequestHandler:
         self.user_id = None
         # Parse redirect URI to get host, port, and path
         parsed_uri = urlparse(redirect_uri)
-        self.callback_path = parsed_uri.path.lstrip('/')  # Remove leading slash (why?)
+        self.callback_path = parsed_uri.path.lstrip('/')
         self.host = parsed_uri.hostname
         self.port = parsed_uri.port
+        self._app_task = None
         # Register callback route
         self._register_callback_route()
 
@@ -61,19 +62,24 @@ class RequestHandler:
                     self._token_event.set()
             return closeBrowser
 
-    async def start_oauth_flow(self):
+    async def start_oauth_flow(self, browser=None):
         """Starts the OAuth flow by opening the browser and waits for token acquisition."""
-        if not self.token:
-            webbrowser.open(self.get_auth_url())
-            # Wait for the token to be set in the callback
-            await self._token_event.wait()
+        bro = webbrowser.get(browser)
+        bro.open(self.get_auth_url(), new=1)
+        # Wait for the token to be set in the callback
+        await self._token_event.wait()
 
-    async def login(self):
-        await self.start_oauth_flow()
-        # Get login info/validate
-        self.login_info = await self.validate_auth()
+    async def login(self, browser=None):
+        if not self._app_task:
+            self._app_task = asyncio.create_task(self.app.run_task(host=self.host, port=self.port))
+        if not self.token:
+            await self.start_oauth_flow(browser)
+        if not self.login_info:
+            # Get login info/validate
+            self.login_info = await self.validate_auth()
         self.user_id = self.login_info['user_id']
-        logger.warning(f'Logged in as {self.login_info}')
+        logger.warning(f'Logged in as: \n{json.dumps(self.login_info, indent=2)}')
+        return self.login_info
 
     def get_auth_url(self):
         """Generates the OAuth authorization URL."""
@@ -94,8 +100,11 @@ class RequestHandler:
         }
     
     async def validate_auth(self):
-        auth_check = await self.api_request("GET", validateEndoint)
-        logger.info(f"Auth validation response: {auth_check}")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(validateEndoint, headers={'Authorization': f'OAuth {self.token.get("access_token")}'}) as response:
+                response.raise_for_status()
+                auth_check = await response.json()
+        logger.debug(f"Auth validation response: \n{json.dumps(auth_check, indent=2)}")
         return auth_check
 
     async def refresh_oauth_token(self):
@@ -127,7 +136,7 @@ class RequestHandler:
         kwargs['headers'] = self.get_headers()
         async with aiohttp.ClientSession() as session:
             async with session.request(method, url, *args, **kwargs) as response:
-                logger.debug(f"[{method}] {url} [{response.status}]")
+                logger.debug(f"[{method}] {url} {kwargs} [{response.status}]")
                 match response.status:
                     case 401:
                         logger.error("Token expired, refreshing...")

@@ -8,7 +8,7 @@ class BaseStorage:
         raise NotImplementedError
 
 class JSONStorage(BaseStorage):
-    def __init__(self, storage_dir='alerts'):
+    def __init__(self, storage_dir='db/alerts'):
         self.storage_dir = storage_dir
         os.makedirs(self.storage_dir, exist_ok=True)
 
@@ -53,7 +53,7 @@ class MongoDBStorage(BaseStorage):
         return {str(alert['_id']): alert for alert in alerts}
 
 class SQLiteStorage(BaseStorage):
-    def __init__(self, db_name='twitch_alerts.db'):
+    def __init__(self, db_name='db/alerts/twitch_alerts.db'):
         try:
             import sqlite3
         except ImportError:
