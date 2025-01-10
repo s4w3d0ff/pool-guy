@@ -8,7 +8,7 @@ class TwitchBot:
     def __init__(self, http_creds={}, ws_config={}, alert_objs={}):
         self.ws = TwitchWS(bot=self, creds=http_creds, **ws_config)
         self.http = self.ws.http
-        self.app = self.ws.http.app
+        self.app = self.ws.http.server
         self._tasks = []
         self.register_routes()
         if alert_objs:
@@ -17,7 +17,6 @@ class TwitchBot:
         self.channelBadges = {}
 
     async def getChanBadges(self, bid=None, size='image_url_4x'):
-        """badges = {set_id: {id: url,,,},,,}"""
         r = await self.http.getGlobalChatBadges()
         r += await self.http.getChannelChatBadges(bid)
         badges = {}
@@ -51,9 +50,7 @@ class TwitchBot:
             raise e
 
     async def after_login(self):
-        """ Used to execute logic after the webserver and websocket are running and the bot is logged in """
         pass
 
     def register_routes(self):
-        """ Used to register Quart app routes when TwitchBot inits """
         pass

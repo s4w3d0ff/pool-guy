@@ -1,6 +1,8 @@
-from .utils import Quart, request
-from .utils import aiohttp, asyncio, webbrowser, json
+from .utils import aiohttp, asyncio, webbrowser, json, os
 from .utils import ColorLogger, closeBrowser, urlparse, urlencode
+from .webserver import WebServer
+from aiohttp import web, WSMsgType
+import functools
 
 logger = ColorLogger(__name__)
 
@@ -9,58 +11,71 @@ oauthEndpoint = "https://id.twitch.tv/oauth2/authorize"
 validateEndoint = "https://id.twitch.tv/oauth2/validate"
 
 class RequestHandler:
-    def __init__(self, client_id, client_secret, redirect_uri, scopes, app=None):
-        self.app = app or Quart("webserver")
+    def __init__(self, client_id, client_secret, redirect_uri, scopes):
+        # Parse redirect URI to get host, port, and path
+        parsed_uri = urlparse(redirect_uri)
+        self.callback_path = parsed_uri.path.lstrip('/')
+        
+        # OAuth-related attributes
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
         self.scopes = scopes
         self.token = None
         self._token_event = asyncio.Event()
-        self.emotes = {}
         self.login_info = None
         self.user_id = None
-        # Parse redirect URI to get host, port, and path
-        parsed_uri = urlparse(redirect_uri)
-        self.callback_path = parsed_uri.path.lstrip('/')
-        self.host = parsed_uri.hostname
-        self.port = parsed_uri.port
-        self._app_task = None
+        
+        # Initialize web server
+        self.server = WebServer(parsed_uri.hostname, parsed_uri.port)
+        
         # Register callback route
-        self._register_callback_route()
+        self.server.add_route(f'/{self.callback_path}', self.callback_handler)
 
-    def _register_callback_route(self):
-        """Registers the dynamic callback route based on redirect_uri."""
-        @self.app.route(f'/{self.callback_path}')
-        async def callback():
-            """Handles the OAuth callback."""
-            code = request.args.get('code')
-            if not code:
-                logger.error("No code provided in callback.")
-                return "Error: No code provided", 400
-            
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    tokenEndpoint,
-                    data={
-                        'client_id': self.client_id,
-                        'client_secret': self.client_secret,
-                        'code': code,
-                        'grant_type': 'authorization_code',
-                        'redirect_uri': self.redirect_uri
-                    },
-                    headers={'Accept': 'application/json'}
-                ) as response:
-                    response.raise_for_status()
-                    token_data = await response.json()
-                    self.token = {
-                        "access_token": token_data['access_token'],
-                        "refresh_token": token_data['refresh_token']
-                    }
-                    logger.info("Access token obtained and stored.")
-                    # Set the event to signal token acquisition
-                    self._token_event.set()
-            return closeBrowser
+    async def callback_handler(self, request):
+        """Handles the OAuth callback."""
+        code = request.query.get('code')
+        if not code:
+            logger.error("No code provided in callback.")
+            return web.Response(text="Error: No code provided", status=400)
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                tokenEndpoint,
+                data={
+                    'client_id': self.client_id,
+                    'client_secret': self.client_secret,
+                    'code': code,
+                    'grant_type': 'authorization_code',
+                    'redirect_uri': self.redirect_uri
+                },
+                headers={'Accept': 'application/json'}
+            ) as response:
+                response.raise_for_status()
+                token_data = await response.json()
+                self.token = {
+                    "access_token": token_data['access_token'],
+                    "refresh_token": token_data['refresh_token']
+                }
+                logger.info("Access token obtained and stored.")
+                self._token_event.set()
+                
+        return web.Response(
+            text=closeBrowser,
+            content_type='text/html',
+            charset='utf-8'
+        )
+
+    async def login(self, browser=None):
+        """Start the server and initiate OAuth flow."""
+        await self.server.start()
+        if not self.token:
+            await self.start_oauth_flow(browser)
+        if not self.login_info:
+            self.login_info = await self.validate_auth()
+        self.user_id = self.login_info['user_id']
+        logger.warning(f'Logged in as: \n{json.dumps(self.login_info, indent=2)}')
+        return self.login_info
 
     async def start_oauth_flow(self, browser=None):
         """Starts the OAuth flow by opening the browser and waits for token acquisition."""
@@ -68,19 +83,7 @@ class RequestHandler:
         bro.open(self.get_auth_url(), new=1)
         # Wait for the token to be set in the callback
         await self._token_event.wait()
-
-    async def login(self, browser=None):
-        if not self._app_task:
-            self._app_task = asyncio.create_task(self.app.run_task(host=self.host, port=self.port))
-        if not self.token:
-            await self.start_oauth_flow(browser)
-        if not self.login_info:
-            # Get login info/validate
-            self.login_info = await self.validate_auth()
-        self.user_id = self.login_info['user_id']
-        logger.warning(f'Logged in as: \n{json.dumps(self.login_info, indent=2)}')
-        return self.login_info
-
+    
     def get_auth_url(self):
         """Generates the OAuth authorization URL."""
         params = urlencode({

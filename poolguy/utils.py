@@ -3,9 +3,8 @@ import random, string, os
 import asyncio, re
 import webbrowser
 import websockets
+import threading
 import aiohttp
-from quart import Quart, request, jsonify, redirect, render_template
-from quart import websocket as quartws
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from urllib.parse import urlparse, urlencode
@@ -120,4 +119,24 @@ class MaxSizeDict(OrderedDict):
             if len(self) >= self.max_size:
                 self.popitem(last=False)
         super().__setitem__(key, value)
+
+
+class ThreadWithReturn(threading.Thread):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._return = None
+        self._exception = None
+
+    def run(self):
+        try:
+            if self._target is not None:
+                self._return = self._target(*self._args, **self._kwargs)
+        except Exception as e:
+            self._exception = e
+
+    def join(self, timeout=None):
+        super().join(timeout)
+        if self._exception:
+            raise self._exception
+        return self._return
         
