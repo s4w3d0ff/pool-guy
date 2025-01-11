@@ -30,7 +30,7 @@ class TwitchWS:
         if not self._socket_task:
             self._queue_task = asyncio.create_task(self.alert_queue.process_alerts())
             self._socket_task = asyncio.create_task(self.socket_loop())
-        return [self.http._app_task, self._queue_task, self._socket_task]
+        return [self.http.server._app_task, self._queue_task, self._socket_task]
 
     async def socket_loop(self):
         self.socket = await websockets.connect(websocketURL)
@@ -59,8 +59,8 @@ class TwitchWS:
         self.alert_queue.is_running = False
         await self._queue_task
         # stop quart app
-        await self.http.app.shutdown()
-        await self.http._app_task
+        await self.http.server.stop()
+        await self.http.server._app_task
         
 
     async def after_init_welcome(self):
@@ -145,11 +145,7 @@ class Alert(ABC):
         self.atype = alert_type
         self.data = data
         self.meta = meta
-        # Register the routes
-        self.register_routes()
 
-    def register_routes(self):
-        pass
         
     @abstractmethod
     async def process(self):
@@ -180,9 +176,6 @@ class GenericAlert(Alert):
     """Generic alert class for handling unknown alert types."""
     def __init__(self, bot, alert_id, alert_type, data, meta):
         super().__init__(bot, alert_id, alert_type, data, meta)
-    
-    def register_routes(self):
-        logger.debug(f"register_routes: No routes to register")
     
     async def process(self):
         """Process a generic alert."""
