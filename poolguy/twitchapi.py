@@ -338,9 +338,13 @@ class TwitchApi(RequestHandler):
                 "reason": reason
             }
         }
+        params = {
+            "broadcaster_id": broadcaster_id or self.user_id,
+            "moderator_id": self.user_id,
+        }
         if duration:
             data["data"]["duration"] = duration
-        r = await self.api_request("post", apiEndpoints['ban'], data=json.dumps(data))
+        r = await self.api_request("post", apiEndpoints['ban'], params=params, data=json.dumps(data))
         return r['data']
 
     async def unbanUser(self, broadcaster_id=None, user_id=None):
@@ -618,7 +622,8 @@ class TwitchApi(RequestHandler):
             if sub['status'] == "enabled":
                 continue
             else:
-                logger.info(f"[deleteEventSub]->{sub['type']} {sub['status']} {sub['condition']}")
+                logger.info(f"[deleteEventSub] -> {sub['type']} (Reason: '{sub['status']}')")
+                logger.debug(f"{sub['condition']}")
                 tasks.append(asyncio.create_task(self.deleteEventSub(sub['id'])))
         await asyncio.gather(*tasks)
         logger.warning(f"Removed all inactive EventSub subscriptions")

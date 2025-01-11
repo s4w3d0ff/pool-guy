@@ -27,6 +27,8 @@ class TwitchWS:
 
     async def run(self, login_browser=None):
         await self.http.login(login_browser)
+        logger.warning(f"Clearing orphaned event subs")
+        await self.http.unsubAllEvents()
         if not self._socket_task:
             self._queue_task = asyncio.create_task(self.alert_queue.process_alerts())
             self._socket_task = asyncio.create_task(self.socket_loop())
@@ -62,10 +64,7 @@ class TwitchWS:
         await self.http.server.stop()
         await self.http.server._app_task
         
-
     async def after_init_welcome(self):
-        logger.warning(f"Clearing orphaned event subs")
-        await self.http.unsubAllEvents()
         for chan in self.channels:
             if isinstance(self.channels[chan], list):
                 for i in self.channels[chan]:
@@ -213,19 +212,20 @@ class AlertFactory:
 #=============================================================================================
 #=============================================================================================
 class AlertQueue:
-    def __init__(self, bot, **kwargs):
+    def __init__(self, bot, delay=0.1, **kwargs):
         self.bot = bot
         self.queue = asyncio.Queue()
         self.is_processing = True
         self.is_running = False
         self._current_id = int("{:.6f}".format(time.time()).replace('.', ''))
+        self.delay = delay
         self.storage = StorageFactory.create_storage(**kwargs)
 
     async def process_alerts(self):
         self.is_running = True
         while self.is_running:
             if not self.is_processing:
-                await asyncio.sleep(1)
+                await asyncio.sleep(self.delay)
                 continue
             try:
                 alert_id, alert_data = await self.queue.get()
@@ -244,6 +244,7 @@ class AlertQueue:
             except Exception as e:
                 self.queue.task_done()
                 logger.error(f"Error processing alert {alert_id}: {e}")
+            await asyncio.sleep(self.delay)
 
     async def add_alert(self, alert_type, data, meta):
         self._current_id += 1
@@ -261,21 +262,3 @@ class AlertQueue:
 
     def resume(self):
         self.is_processing = True
-
-    async def skip_alert(self, alert_id):
-        self.pause()
-        new_queue = asyncio.Queue()
-        while not self.queue.empty():
-            current_id, data = await self.queue.get()
-            if current_id != alert_id:
-                await new_queue.put((current_id, data))
-            self.queue.task_done()
-        self.queue = new_queue
-        self.resume()
-
-    async def replay_alert(self, date, alert_id):
-        alerts = self.storage.load_alerts(date)
-        if alert_id not in alerts:
-            raise ValueError(f"Alert {alert_id} not found in {date}")
-        alert_data = alerts[alert_id]
-        await self.queue.put((int(alert_id), alert_data))

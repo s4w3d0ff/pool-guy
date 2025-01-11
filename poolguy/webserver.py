@@ -1,12 +1,12 @@
 from .utils import aiohttp, asyncio, webbrowser, json, os
-from .utils import ColorLogger, closeBrowser, urlparse, urlencode
+from .utils import ColorLogger, urlparse, urlencode
 from aiohttp import web, WSMsgType
 import functools
 
 logger = ColorLogger(__name__)
 
 class WebServer:
-    def __init__(self, host, port):
+    def __init__(self, host, port, static_dirs=['static']):
         self.app = web.Application()
         self.host = host
         self.port = port
@@ -15,15 +15,14 @@ class WebServer:
         self._app_task = None
         self.routes = {}
         self.ws_handlers = {}
-        
-        # Static file handling
-        self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) #get_caller_directory()
-        self.static_dir = os.path.join(self.base_dir, 'static')
-        
-        # Create directories if they don't exist
-        os.makedirs(self.static_dir, exist_ok=True)
-        # Set up static routes
-        self.app.router.add_static('/static/', self.static_dir)
+        self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.static_dirs = static_dirs
+        for dir in static_dirs:
+            s_dir = os.path.join(self.base_dir, dir)
+            # Create directory if missing
+            os.makedirs(s_dir, exist_ok=True)
+            # Add static route
+            self.app.router.add_static(f'/{dir}/', s_dir)
 
     def add_route(self, path, handler, method='GET', **kwargs):
         """Add a new route to the application."""
@@ -36,17 +35,17 @@ class WebServer:
             'kwargs': kwargs
         }
         self.routes[path] = route_info
-        
-        if method == 'GET':
-            self.app.router.add_get(path, handler, **kwargs)
-        elif method == 'POST':
-            self.app.router.add_post(path, handler, **kwargs)
-        elif method == 'PUT':
-            self.app.router.add_put(path, handler, **kwargs)
-        elif method == 'DELETE':
-            self.app.router.add_delete(path, handler, **kwargs)
-        else:
-            self.app.router.add_route(method, path, handler, **kwargs)
+        match method:
+            case 'GET':
+                self.app.router.add_get(path, handler, **kwargs)
+            case 'POST':
+                self.app.router.add_post(path, handler, **kwargs)
+            case 'PUT':
+                self.app.router.add_put(path, handler, **kwargs)
+            case 'DELETE':
+                self.app.router.add_delete(path, handler, **kwargs)
+            case _:
+                self.app.router.add_route(method, path, handler, **kwargs)
         logger.info(f"Added {method} route for {path}")
 
     def add_websocket(self, path, handler, **kwargs):
