@@ -1,6 +1,5 @@
 from .utils import asyncio, ColorLogger
 from .twitchws import Alert, TwitchWS
-from .twitchapi import TwitchApi
 
 logger = ColorLogger(__name__)
 

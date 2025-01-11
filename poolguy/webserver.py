@@ -1,7 +1,9 @@
-from .utils import aiohttp, asyncio, webbrowser, json, os
-from .utils import ColorLogger, urlparse, urlencode
-from aiohttp import web, WSMsgType
 import functools
+# Third-party imports
+from aiohttp import web, WSMsgType
+# Local imports
+from .utils import webbrowser, json, asyncio, os
+from .utils import ColorLogger, urlparse, urlencode
 
 logger = ColorLogger(__name__)
 
