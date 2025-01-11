@@ -15,8 +15,6 @@ class RequestHandler:
         # Parse redirect URI to get host, port, and path
         parsed_uri = urlparse(redirect_uri)
         self.callback_path = parsed_uri.path.lstrip('/')
-        
-        # OAuth-related attributes
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri

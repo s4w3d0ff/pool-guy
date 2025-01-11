@@ -32,7 +32,7 @@ class TwitchBot:
         """ Adds alert classes to the AlertFactory cache """
         self.ws.register_alert_class(name, obj)
         
-    async def start(self, hold=False, login_browser=None):
+    async def start(self, hold=True, login_browser=None):
         # start OAuth, websocket connection, and queue
         self._tasks = await self.ws.run(login_browser)
         self.channelBadges[str(self.http.user_id)] = await self.getChanBadges()
