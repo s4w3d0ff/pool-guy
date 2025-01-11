@@ -1,6 +1,5 @@
-import asyncio
-import json
 from datetime import datetime, timezone
+from .utils import json, asyncio
 from .utils import randString
 
 test_payloads = {

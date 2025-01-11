@@ -1,15 +1,22 @@
-import logging, json, time
-import random, string, os
-import asyncio, re
+import logging
+import json
+import time
+import random
+import string
+import os
+import asyncio
+import re
 import webbrowser
-import websockets
 import threading
-import aiohttp
 from abc import ABC, abstractmethod
 from collections import OrderedDict
 from urllib.parse import urlparse, urlencode
-from dateutil import parser
 from datetime import datetime
+
+# Third-party imports
+import websockets
+import aiohttp
+from dateutil import parser
 
 closeBrowser = """
 <!DOCTYPE html>
