@@ -1,9 +1,6 @@
-import functools
-# Third-party imports
 from aiohttp import web, WSMsgType
-# Local imports
 from .utils import webbrowser, json, asyncio, os
-from .utils import ColorLogger, urlparse, urlencode
+from .utils import ColorLogger, urlparse, urlencode, wraps
 
 logger = ColorLogger(__name__)
 
@@ -21,9 +18,7 @@ class WebServer:
         self.static_dirs = static_dirs
         for dir in static_dirs:
             s_dir = os.path.join(self.base_dir, dir)
-            # Create directory if missing
             os.makedirs(s_dir, exist_ok=True)
-            # Add static route
             self.app.router.add_static(f'/{dir}/', s_dir)
 
     def add_route(self, path, handler, method='GET', **kwargs):
@@ -55,7 +50,7 @@ class WebServer:
         if self._runner is not None:
             logger.warning("Adding WebSocket after server started - requires restart to take effect")
 
-        @functools.wraps(handler)
+        @wraps(handler)
         async def ws_wrapper(request):
             ws = web.WebSocketResponse(**kwargs)
             await ws.prepare(request)
@@ -85,18 +80,24 @@ class WebServer:
             self._app_task = asyncio.create_task(self._site.start())
             logger.info(f"Server started on {self.host}:{self.port}")
 
-    async def stop(self):
-        """Stop the web server."""
+    async def shutdown(self):
+        """Shut down the web server."""
         if self._site:
             await self._site.stop()
         if self._runner:
             await self._runner.cleanup()
+        if self._app_task:
+            self._app_task.cancel()
+            try:
+                await self._app_task
+            except asyncio.CancelledError:
+                pass
         self._app_task = None
         logger.info("Server stopped")
 
     async def restart(self):
         """Restart the server to apply new routes/websockets."""
-        await self.stop()
+        await self.shutdown()
         await self.start()
         logger.info("Server restarted with updated routes")
 

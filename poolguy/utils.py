@@ -183,7 +183,7 @@ def cmd_rate_limit(calls=2, period=10, warn_cooldown=5):
                 if current_time - state['last_warning'] > warn_cooldown:
                     wait_time = period - (current_time - state['calls'][0])
                     await self.http.sendChatMessage(
-                        f"@{user['username']} Please wait {wait_time:.1f}s before using this command again.",
+                        f"@{user['username']}, please wait {wait_time:.1f}s before using this command again.",
                         broadcaster_id=channel["broadcaster_id"]
                     )
                     state['last_warning'] = current_time

@@ -116,8 +116,7 @@ class TwitchBot:
         logger.warning("Shutting down TwitchBot...")
         if not reset:
             self.is_running = False
-        if self.ws.connected:
-            await self.ws.close()
+        await self.ws.close()
         # Clear all tasks
         for task in self._tasks:
             if not task.done():

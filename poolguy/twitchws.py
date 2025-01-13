@@ -38,37 +38,30 @@ class TwitchWS:
     async def socket_loop(self):
         self.socket = await websockets.connect(websocketURL)
         self.connected = True
-        logger.info(f"[socket_loop:{self.session_id}] socket_loop started")
+        logger.debug(f"[socket_loop] socket_loop started")
         while self.connected:
             try:
                 message = await self.socket.recv()
                 await self.handle_message(message)
-            except websockets.exceptions.ConnectionClosed as e:
-                logger.error(f"[socket_loop] WebSocket connection closed: {e}")
-                break
             except Exception as e:
                 logger.error(f"[socket_loop] {e}")
-                await self.socket.close()
                 break
             await asyncio.sleep(0.1)
         self._disconnect_event.set()
-        await self.close()
 
     async def close(self):
         # stop socket
+        logger.info("Closing Websocket")
         self.connected = False
-        await self._socket_task
         try:
             await self.socket.close()
         except Exception as e:
             logger.error(f"[close] {e}")
         self.socket = None
-        # stop queue
+        logger.debug("Stopping Queue")
         self.alert_queue.is_running = False
-        await self._queue_task
-        # stop quart app
-        await self.http.server.stop()
-        await self.http.server._app_task
+        logger.debug("Shutting down Webserver")
+        await self.http.server.shutdown()
         
     async def after_init_welcome(self):
         for chan in self.channels:
