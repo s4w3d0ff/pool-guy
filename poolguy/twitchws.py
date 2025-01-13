@@ -20,6 +20,7 @@ class TwitchWS:
         self.seen_messages = MaxSizeDict(42)
         self._queue_task = None
         self._socket_task = None
+        self._disconnect_event = asyncio.Event()
 
     def register_alert_class(self, name, obj):
         """ Adds alert classes to the AlertFactory cache """
@@ -42,11 +43,15 @@ class TwitchWS:
             try:
                 message = await self.socket.recv()
                 await self.handle_message(message)
+            except websockets.exceptions.ConnectionClosed as e:
+                logger.error(f"[socket_loop] WebSocket connection closed: {e}")
+                break
             except Exception as e:
                 logger.error(f"[socket_loop] {e}")
                 await self.socket.close()
-                raise e
+                break
             await asyncio.sleep(0.1)
+        self._disconnect_event.set()
 
     async def close(self):
         # stop socket
