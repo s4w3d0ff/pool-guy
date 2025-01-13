@@ -117,9 +117,7 @@ class TwitchBot:
         if not reset:
             self.is_running = False
         if self.ws.connected:
-            self.ws.connected = False  # Signal socket_loop to stop
-            if self.ws.socket and not self.ws.socket.closed:
-                await self.ws.socket.close()
+            await self.ws.close()
         # Clear all tasks
         for task in self._tasks:
             if not task.done():
@@ -132,7 +130,6 @@ class TwitchBot:
 
     async def restart(self):
         """Restart the bot after shutdown"""
-        await self.shutdown() # make sure we are completely shutdown before restart
         logger.warning(f"Restarting TwitchBot in {self.retry_delay} seconds...")
         await asyncio.sleep(self.retry_delay)
         await self.start()
