@@ -1,7 +1,8 @@
-from .utils import asyncio, ColorLogger
+from .utils import asyncio, ColorLogger, cmd_rate_limit
 from .twitchws import Alert, TwitchWS
 
 logger = ColorLogger(__name__)
+
 
 class TwitchBot:
     def __init__(self, cmd_prefix=['!', '~'], http_creds={}, ws_config={}, alert_objs={}):
@@ -60,6 +61,7 @@ class TwitchBot:
         else:
             logger.debug(f"Unknown command: {command_name}")
 
+    @cmd_rate_limit(calls=3, period=30, warn_cooldown=15)
     async def cmd_help(self, user, channel, args):
         """Shows available commands. Usage: !help [command]"""
         if args:
@@ -68,9 +70,8 @@ class TwitchBot:
             if command in self.commands:
                 help_text = f"{command}: {self.commands[command]['help']}"
             else:
-                help_text = f"Unknown command: {command}"
+                help_text = f"Unknown command: '{command}' Available commands: " + ", ".join(self.commands.keys())
         else:
-            # Show list of available commands
             help_text = "Available commands: " + ", ".join(self.commands.keys())
         await self.http.sendChatMessage(help_text, broadcaster_id=channel["broadcaster_id"])
 
