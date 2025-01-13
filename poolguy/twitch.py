@@ -5,18 +5,23 @@ logger = ColorLogger(__name__)
 
 
 class TwitchBot:
-    def __init__(self, cmd_prefix=['!', '~'], http_creds={}, ws_config={}, alert_objs={}):
+    def __init__(self, cmd_prefix=['!', '~'], http_creds={}, ws_config={}, alert_objs={}, max_retries=3, retry_delay=30, login_browser="chrome"):
         self._prefix = cmd_prefix
-        self.ws = TwitchWS(bot=self, creds=http_creds, **ws_config)
-        self.http = self.ws.http
-        self.app = self.ws.http.server
+        self.http_creds = http_creds
+        self.ws_config = ws_config
+        self.alert_objs = alert_objs
+        self.ws = None
+        self.http = None
+        self.app = None
         self._tasks = []
-        self.register_routes()
-        if alert_objs:
-            for key, value in alert_objs.items():
-                self.add_alert_class(key, value)
         self.channelBadges = {}
         self.commands = {}
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
+        self.login_browser = login_browser
+        self.retry_count = 0
+        self.is_running = False
+       
         # Register commands
         self._register_commands()
 
@@ -90,23 +95,66 @@ class TwitchBot:
     def add_alert_class(self, name, obj):
         """ Adds alert classes to the AlertFactory cache """
         self.ws.register_alert_class(name, obj)
-        
-    async def start(self, hold=True, login_browser=None):
+    
+    async def start(self):
+        self.is_running = True
+        self.ws = TwitchWS(bot=self, creds=self.http_creds, **self.ws_config)
+        self.http = self.ws.http
+        self.app = self.ws.http.server
+        self.register_routes()
+        if self.alert_objs:
+            for key, value in self.alert_objs.items():
+                self.add_alert_class(key, value)
         # start OAuth, websocket connection, and queue
-        self._tasks = await self.ws.run(login_browser)
+        self._tasks = await self.ws.run(login_browser=self.login_browser)
         self.channelBadges[str(self.http.user_id)] = await self.getChanBadges()
         await self.after_login()
-        if hold:
-            # wait/block until tasks complete (should run forever)
-            await self.hold()
+        await self.hold()
+
+    async def shutdown(self, reset=True):
+        """Gracefully shutdown the bot"""
+        logger.warning("Shutting down TwitchBot...")
+        if not reset:
+            self.is_running = False
+        if self.ws.connected:
+            self.ws.connected = False  # Signal socket_loop to stop
+            if self.ws.socket and not self.ws.socket.closed:
+                await self.ws.socket.close()
+        # Clear all tasks
+        for task in self._tasks:
+            if not task.done():
+                task.cancel()
+        # Wait for tasks to complete
+        if self._tasks:
+            await asyncio.gather(*self._tasks, return_exceptions=True)
+        self._tasks.clear()
+        logger.warning("TwitchBot shutdown complete")
+
+    async def restart(self):
+        """Restart the bot after shutdown"""
+        await self.shutdown() # make sure we are completely shutdown before restart
+        logger.warning(f"Restarting TwitchBot in {self.retry_delay} seconds...")
+        await asyncio.sleep(self.retry_delay)
+        await self.start()
 
     async def hold(self):
         try:
-            await asyncio.gather(*self._tasks)
-        except Exception as e:
-            logger.error(f"Error in TwitchBot.start(): {e}")
-            await self.ws.close()
-            raise e
+            await self.ws._disconnect_event.wait() # wait for ws to disconnect
+            await self.shutdown() # clean shutdown
+        except asyncio.CancelledError: # tasks cancelled, this is fine
+            logger.warning("Bot tasks cancelled")
+        except Exception as e: # unexpected error, complete shutdown
+            logger.error(f"Error in TwitchBot.hold(): {e}")
+            await self.shutdown()
+            raise e # raise error
+        if self.is_running: # we shutdown but are still running
+            self.retry_count += 1 # try again?
+            logger.warning(f"WebSocket disconnected. Attempt {self.retry_count} of {self.max_retries}")
+            if self.retry_count <= self.max_retries: # havent hit max retries
+                await self.restart() # start again
+            else:
+                logger.error(f"Max retry attempts ({self.max_retries}) reached. Shutting down permanently.")
+
 
     async def after_login(self):
         pass
