@@ -52,6 +52,7 @@ class TwitchWS:
                 break
             await asyncio.sleep(0.1)
         self._disconnect_event.set()
+        await self.close()
 
     async def close(self):
         # stop socket
