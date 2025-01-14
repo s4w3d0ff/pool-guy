@@ -1,11 +1,14 @@
+import aiofiles
+from aiohttp import web
+from aiohttp import WSMsgType, WSServerHandshakeError
 from .utils import asyncio, ColorLogger, cmd_rate_limit
 from .twitchws import Alert, TwitchWS
-
+from .tester import inject_custom_twitchws_message, inject_twitchws_message, test_meta_data, test_payloads
 logger = ColorLogger(__name__)
 
 
 class TwitchBot:
-    def __init__(self, cmd_prefix=['!', '~'], http_creds={}, ws_config={}, alert_objs={}, max_retries=3, retry_delay=30, login_browser="chrome"):
+    def __init__(self, cmd_prefix=['!', '~'], http_creds={}, ws_config={}, alert_objs={}, max_retries=3, retry_delay=30, login_browser="chrome", load_test_routes=False):
         self._prefix = cmd_prefix
         self.http_creds = http_creds
         self.ws_config = ws_config
@@ -14,14 +17,14 @@ class TwitchBot:
         self.http = None
         self.app = None
         self._tasks = []
-        self.channelBadges = {}
         self.commands = {}
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.login_browser = login_browser
         self.retry_count = 0
         self.is_running = False
-       
+        # optional test routes
+        self.load_test_routes = load_test_routes
         # Register commands
         self._register_commands()
 
@@ -80,14 +83,6 @@ class TwitchBot:
             help_text = "Available commands: " + ", ".join(self.commands.keys())
         await self.http.sendChatMessage(help_text, broadcaster_id=channel["broadcaster_id"])
 
-    async def getChanBadges(self, bid=None, size='image_url_4x'):
-        r = await self.http.getGlobalChatBadges()
-        r += await self.http.getChannelChatBadges(bid)
-        badges = {}
-        for i in r:
-            badges[i['set_id']] = {b['id']: b[size] for b in i['versions']}
-        return badges
-
     async def add_task(self, coro, *args, **kwargs):
         """ Adds a task to our list of tasks """
         self._tasks.append(asyncio.create_task(coro(*args, **kwargs)))
@@ -96,12 +91,14 @@ class TwitchBot:
         """ Adds alert classes to the AlertFactory cache """
         self.ws.register_alert_class(name, obj)
     
-    async def start(self):
+    async def start(self, hold=True):
         self.is_running = True
         self.ws = TwitchWS(bot=self, creds=self.http_creds, **self.ws_config)
         self.http = self.ws.http
         self.app = self.ws.http.server
         self.register_routes()
+        if self.load_test_routes:
+            self._register_test_routes()
         if self.alert_objs:
             for key, value in self.alert_objs.items():
                 self.add_alert_class(key, value)
@@ -109,14 +106,16 @@ class TwitchBot:
         self._tasks = await self.ws.run(login_browser=self.login_browser)
         self.channelBadges[str(self.http.user_id)] = await self.getChanBadges()
         await self.after_login()
-        await self.hold()
+        if hold:
+            await self.hold()
 
     async def shutdown(self, reset=True):
         """Gracefully shutdown the bot"""
         logger.warning("Shutting down TwitchBot...")
         if not reset:
             self.is_running = False
-        await self.ws.close()
+        if self.ws.connected:
+            await self.ws.close()
         # Clear all tasks
         for task in self._tasks:
             if not task.done():
@@ -154,6 +153,66 @@ class TwitchBot:
 
     async def after_login(self):
         pass
-
+        
     def register_routes(self):
         pass
+    #=====================================================================
+    #=====================================================================
+    def _register_test_routes(self):
+        @self.app.route('/testui')
+        async def testui(request):
+            async with aiofiles.open('templates/testui.html', 'r', encoding='utf-8') as f:
+                template = await f.read()
+                return web.Response(
+                    text=template,
+                    content_type='text/html',
+                    charset='utf-8'
+                )
+                
+        @self.app.route("/testcheer/{amount}/{anon}")
+        async def testcheer(request):
+            payload = test_payloads["channel.cheer"]
+            payload["event"]["bits"] = int(request.match_info['amount'])
+            payload["event"]["is_anonymous"] = False if request.match_info['anon'] == 'False' else True
+            await inject_custom_twitchws_message(
+                self.ws, 
+                {"metadata": test_meta_data(), "payload": payload}
+            )
+            return web.json_response({"status": True})
+        
+        @self.app.route("/testsub/{tier}/{gifted}")
+        async def testsub(request):
+            payload = test_payloads["channel.subscribe"]
+            payload["event"]["tier"] = request.match_info['tier'],
+            payload["event"]["is_gift"] = False if request.match_info['gifted'] == 'False' else True
+            await inject_custom_twitchws_message(
+                self.ws, 
+                {"metadata": test_meta_data(), "payload": payload}
+            )
+            return web.json_response({"status": True})
+
+
+        @self.app.route("/testsubgift/{amount}/{tier}/{anon}")
+        async def testsubgift(request):
+            payload = test_payloads["channel.subscription.gift"]
+            payload["event"]["total"] = int(request.match_info['amount']),
+            payload["event"]["tier"] = request.match_info['tier'],
+            payload["event"]["is_anonymous"] = False if request.match_info['anon'] == 'False' else True
+            await inject_custom_twitchws_message(
+                self.ws, 
+                {"metadata": test_meta_data(), "payload": payload}
+            )
+            return web.json_response({"status": True})
+
+        @self.app.route("/testsubmessage/{months}/{tier}/{streak}/{duration}")
+        async def testsubmessage(request):
+            payload = test_payloads["channel.subscription.message"]
+            payload["event"]["tier"] = request.match_info['tier'],
+            payload["event"]["cumulative_months"] = int(request.match_info['months']),
+            payload["event"]["streak_months"] = int(request.match_info['streak']),
+            payload["event"]["duration_months"] = int(request.match_info['duration'])
+            await inject_custom_twitchws_message(
+                self.ws, 
+                {"metadata": test_meta_data(), "payload": payload}
+            )
+            return web.json_response({"status": True})

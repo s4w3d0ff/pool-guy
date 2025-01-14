@@ -18,27 +18,6 @@ test_payloads = {
             "followed_at": datetime.now(timezone.utc).isoformat()
         }
     },
-    "channel.ban": {
-        "subscription": {
-            "id": randString(),
-            "type": "channel.ban",
-        },
-        "event": {
-            "user_id": "1234",
-            "user_login": "cool_user",
-            "user_name": "Cool_User",
-            "broadcaster_user_id": "1337",
-            "broadcaster_user_login": "cooler_user",
-            "broadcaster_user_name": "Cooler_User",
-            "moderator_user_id": "1339",
-            "moderator_user_login": "mod_user",
-            "moderator_user_name": "Mod_User",
-            "reason": "Offensive language",
-            "banned_at": datetime.now(timezone.utc).isoformat(),
-            "ends_at": datetime.now(timezone.utc).isoformat(),
-            "is_permanent": False
-        }
-    },
     "channel.cheer": {
         "subscription": {
             "id": randString(),
@@ -55,7 +34,72 @@ test_payloads = {
             "message": "pogchamp",
             "bits": 1000
         }
-    }
+    },
+    "channel.subscribe": {
+        "subscription": {
+            "id": randString(),
+            "type": "channel.subscribe"
+        },
+        "event": {
+            "user_id": "1234",
+            "user_login": "cool_user",
+            "user_name": "Cool_User",
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cooler_user",
+            "broadcaster_user_name": "Cooler_User",
+            "tier": "1000",
+            "is_gift": False
+        }
+    },
+    "channel.subscription.gift": {
+        "subscription": {
+            "id": randString(),
+            "type": "channel.subscription.gift"
+        },
+        "event": {
+            "user_id": "1234",
+            "user_login": "cool_user",
+            "user_name": "Cool_User",
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cooler_user",
+            "broadcaster_user_name": "Cooler_User",
+            "total": 1000,
+            "tier": "1000",
+            "cumulative_total": None, # null if anonymous or not shared by the user
+            "is_anonymous": False
+        }
+    },
+    "channel.subscription.message": {
+        "subscription": {
+            "id": randString(),
+            "type": "channel.subscription.message"
+        },
+        "event": {
+            "user_id": "1234",
+            "user_login": "cool_user",
+            "user_name": "Cool_User",
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cooler_user",
+            "broadcaster_user_name": "Cooler_User",
+            "tier": "1000",
+            "message": {
+                "text": "Love the stream! FevziGG",
+                "emotes": [
+                    {
+                        "begin": 23,
+                        "end": 30,
+                        "id": "302976485"
+                    }
+                ]
+            },
+            "cumulative_months": 5,
+            "streak_months": 3, # null if not shared
+            "duration_months": 6
+        }
+    },
+    "channel.goal.progress": {},
+    "channel.hype_train.progress": {},
+    "channel.hype_train.end": {}
 }
 
 def test_meta_data():
