@@ -1,5 +1,5 @@
 from .utils import json, os, aiohttp, re, asyncio
-from .utils import ColorLogger, datetime, loadJSON
+from .utils import ColorLogger, datetime, aioLoadJSON, aioSaveJSON
 from .twitchhttp import RequestHandler, urlencode
 
 logger = ColorLogger(__name__)
@@ -53,8 +53,61 @@ apiEndpoints = {
     "shield_mode": f"{apiUrlPrefix}/moderation/shield_mode"
 }
 
-eventChannels = loadJSON("db/eventsub_versions/eventsub_types.json")
+eventChannels = None
 
+async def fetch_eventsub_types(dir="eventsub_versions", eventsubdocurl="https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/"):
+    global eventChannels
+    filename = f"{dir}/eventsub_types.json"
+    if os.path.exists(filename):
+        logger.info(f"fetch_eventsub_types: loaded {filename}")
+        eventChannels = await aioLoadJSON(filename)
+        return eventChannels
+
+    # Fetch HTML content
+    async with aiohttp.ClientSession() as session:
+        async with session.get(eventsubdocurl) as response:
+            logger.info(f"[GET] {eventsubdocurl} [{response.status}]")
+            if response.status != 200:
+                raise Exception("Failed to fetch webpage")
+            html_content = await response.text()
+
+    # Locate the `<tbody>` section
+    h1_pattern = r'<h1 id="subscription-types">Subscription Types</h1>'
+    tbody_pattern = r'<tbody>(.*?)</tbody>'
+    tbody_match = re.search(f'{h1_pattern}.*?{tbody_pattern}', html_content, re.S)
+
+    if not tbody_match:
+        logger.error("Could not locate the <tbody> section under Subscription Types.")
+        raise ValueError("Unable to locate the <tbody> section under Subscription Types.")
+
+    tbody_content = tbody_match.group(1)
+
+    # Extract rows from the `<tbody>` section
+    rows = re.findall(r'<tr>(.*?)</tr>', tbody_content, re.S)
+    logger.debug(f"Extracted rows: {rows}")
+    subscription_data = {}
+
+    for row in rows:
+        # Extract text from <code> tags, ignoring attributes like class
+        codes = re.findall(r'<code[^>]*>(.*?)</code>', row)
+        logger.debug(f"Extracted codes from row: {codes}")
+        if len(codes) >= 2:
+            subtype, version = codes[0], codes[1]
+            if len(subtype) > 4 and len(version) < 5:
+                subscription_data[subtype] = version
+
+    if not subscription_data:
+        logger.error(f"No valid subscription types found. Rows extracted: {rows}")
+        raise ValueError("No valid subscription types found.")
+
+    # Save results to file
+    os.makedirs(dir, exist_ok=True)
+    await aioSaveJSON(subscription_data, filename)
+    eventChannels = subscription_data
+    return eventChannels
+
+# Run the function
+asyncio.run(fetch_eventsub_types())
 
 class TwitchApi(RequestHandler):
 

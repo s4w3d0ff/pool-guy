@@ -1,5 +1,6 @@
 from .utils import json, asyncio, websockets, time
-from .utils import MaxSizeDict, ColorLogger, ABC, abstractmethod
+from .utils import MaxSizeDict, ColorLogger, ABC
+from .utils import convert2epoch, abstractmethod
 from .twitchstorage import StorageFactory
 from .twitchapi import TwitchApi
 
@@ -11,7 +12,7 @@ class TwitchWS:
     def __init__(self, bot=None, http=None, queue=None, creds={}, channels={"channel.chat.message": [None]}, queue_skip={"channel.chat.message"}, storage_type='json'):
         self.bot = bot
         self.http = http or TwitchApi(**creds)
-        self.alert_queue = queue or AlertQueue(bot=bot, storage_type=storage_type)
+        self.alert_queue = queue or StorageAlertQueue(bot=bot, storage_type=storage_type)
         self.channels = channels
         self.queue_skip = queue_skip
         self.socket = None
@@ -38,7 +39,7 @@ class TwitchWS:
     async def socket_loop(self):
         self.socket = await websockets.connect(websocketURL)
         self.connected = True
-        logger.info(f"[socket_loop:{self.session_id}] socket_loop started")
+        logger.info(f"[socket_loop] started...")
         while self.connected:
             try:
                 message = await self.socket.recv()
@@ -48,27 +49,24 @@ class TwitchWS:
                 break
             except Exception as e:
                 logger.error(f"[socket_loop] {e}")
-                await self.socket.close()
                 break
-            await asyncio.sleep(0.1)
+        self.connected = False
         self._disconnect_event.set()
-        await self.close()
+        logger.warning(f"[socket_loop] socket closed...")
 
     async def close(self):
         # stop socket
+        logger.warning(f"[close] closing socket...")
         self.connected = False
-        await self._socket_task
-        try:
-            await self.socket.close()
-        except Exception as e:
-            logger.error(f"[close] {e}")
-        self.socket = None
-        # stop queue
-        self.alert_queue.is_running = False
-        await self._queue_task
-        # stop quart app
+        # stop webserver app
+        logger.warning(f"[close] stopping webserver...")
         await self.http.server.stop()
-        await self.http.server._app_task
+        # stop queue
+        logger.warning(f"[close] stopping alert_queue...")
+        self.alert_queue.is_running = False
+        logger.warning(f"[close] awaiting _queue_task...")
+        # TODO: add a way to save anything left in the queue during shutdown
+
         
     async def after_init_welcome(self):
         for chan in self.channels:
@@ -113,10 +111,18 @@ class TwitchWS:
         msg = json.loads(message)
         meta = msg["metadata"]
         msgtype = meta["message_type"]
+        msgid = meta["message_id"]
+        timestamp = convert2epoch(meta['message_timestamp'])
+        logger.debug(f"{msgtype}:\n{json.dumps(msg, indent=2)}")
         if meta["message_id"] not in self.seen_messages:
-            logger.debug(f"{msgtype}:\n{json.dumps(meta, indent=2)}")
-            self.seen_messages[meta["message_id"]] = msg
+            self.seen_messages[msgid] = msg
             match msgtype:
+                case "session_welcome": 
+                    await self.handle_session_welcome(meta, msg["payload"])
+                case "session_reconnect": 
+                    await self.handle_session_reconnect(meta, msg["payload"])
+                case "close": 
+                    await self.socket.close()
                 case "notification":
                     noto_type = msg['payload']['subscription']['type']
                     noto_event = msg["payload"]['event']
@@ -124,33 +130,26 @@ class TwitchWS:
                         if noto_type in self.queue_skip:
                             alert = AlertFactory.create_alert(
                                     bot=self.bot,
-                                    alert_id=None,
+                                    alert_id=msgid,
                                     alert_type=noto_type,
                                     data=noto_event,
-                                    meta=meta
+                                    timestamp=timestamp
                                 )
                             asyncio.create_task(alert.process())
                         else:
-                            await self.alert_queue.add_alert(noto_type, noto_event, meta)
-                case "session_welcome": 
-                    await self.handle_session_welcome(meta, msg["payload"])
-                case "session_reconnect": 
-                    await self.handle_session_reconnect(meta, msg["payload"])
-                case "close": 
-                    await self.socket.close()
+                            await self.alert_queue.add_alert(msgid, noto_type, noto_event, timestamp)
                 case _:
                     pass
 
 #=============================================================================================
 #=============================================================================================
 class Alert(ABC):
-    def __init__(self, bot, alert_id, alert_type, data, meta):
+    def __init__(self, bot, alert_id, alert_type, data, timestamp):
         self.bot = bot
-        self.aid = alert_id
-        self.atype = alert_type
+        self.alert_id = alert_id
+        self.alert_type = alert_type
         self.data = data
-        self.meta = meta
-
+        self.timestamp = timestamp
         
     @abstractmethod
     async def process(self):
@@ -160,9 +159,9 @@ class Alert(ABC):
     def to_dict(self):
         """Convert alert to dictionary format for JSON storage."""
         return {
-            'type': self.atype,
-            'data': self.data,
-            'meta': self.meta
+            'type': self.alert_type,
+            'timestamp': self.timestamp,
+            'data': self.data
         }
 
     @classmethod
@@ -172,21 +171,20 @@ class Alert(ABC):
             alert_id=alert_id,
             alert_type=data['type'],
             data=data['data'],
-            meta=data['meta']
+            timestamp=data['timestamp']
         )
 
 #=============================================================================================
 #=============================================================================================
 class GenericAlert(Alert):
     """Generic alert class for handling unknown alert types."""
-    def __init__(self, bot, alert_id, alert_type, data, meta):
-        super().__init__(bot, alert_id, alert_type, data, meta)
+    def __init__(self, bot, alert_id, alert_type, data, timestamp):
+        super().__init__(bot, alert_id, alert_type, data, timestamp)
     
     async def process(self):
         """Process a generic alert."""
-        logger.warn(f"Processing generic alert {self.aid} of type {self.atype}")
+        logger.warn(f"Processing generic alert for {self.alert_type} -> {self.alert_id}")
         logger.info(f"Data: {self.data}")
-        logger.debug(f"Meta: {self.meta}")
 
 #=============================================================================================
 #=============================================================================================
@@ -200,11 +198,11 @@ class AlertFactory:
         cls._alert_classes[alert_type] = alert_class
 
     @staticmethod
-    def create_alert(bot, alert_id, alert_type, data, meta):
+    def create_alert(bot, alert_id, alert_type, data, timestamp):
         """Create an appropriate Alert instance based on the alert type."""
         # First check if we have a registered class for this type
         if alert_type in AlertFactory._alert_classes:
-            return AlertFactory._alert_classes[alert_type](bot, alert_id, alert_type, data, meta)
+            return AlertFactory._alert_classes[alert_type](bot, alert_id, alert_type, data, timestamp)
 
         # Fall back to the old method
         def get_alert_class_name(event_type):
@@ -213,22 +211,21 @@ class AlertFactory:
             return ''.join(class_parts) + 'Alert'
         
         logger.warn(f"{get_alert_class_name(alert_type)} wasn't found! 'GenericAlert' used instead...")
-        return GenericAlert(bot, alert_id, alert_type, data, meta)
+        return GenericAlert(bot, alert_id, alert_type, data, timestamp)
 
 #=============================================================================================
 #=============================================================================================
 class AlertQueue:
-    def __init__(self, bot, delay=0.1, **kwargs):
+    def __init__(self, bot, delay=0.1):
         self.bot = bot
         self.queue = asyncio.Queue()
         self.is_processing = True
         self.is_running = False
-        self._current_id = int("{:.6f}".format(time.time()).replace('.', ''))
         self.delay = delay
-        self.storage = StorageFactory.create_storage(**kwargs)
 
     async def process_alerts(self):
         self.is_running = True
+        logger.debug(f"[AlertQueue] process_alerts started...")
         while self.is_running:
             if not self.is_processing:
                 await asyncio.sleep(self.delay)
@@ -240,31 +237,50 @@ class AlertQueue:
                     alert_id=alert_id,
                     alert_type=alert_data['type'],
                     data=alert_data['data'],
-                    meta=alert_data['meta']
+                    timestamp=alert_data['timestamp']
                 )
                 await alert.process()
-                self.queue.task_done()
             except asyncio.CancelledError:
-                self.queue.task_done()
                 break
             except Exception as e:
-                self.queue.task_done()
                 logger.error(f"Error processing alert {alert_id}: {e}")
+            self.queue.task_done()
             await asyncio.sleep(self.delay)
+        try:
+            self.queue.task_done()
+        except:
+            pass
+        logger.warning(f"[AlertQueue] process_alerts ended")
+        self.is_running = False
 
-    async def add_alert(self, alert_type, data, meta):
-        self._current_id += 1
+    async def add_alert(self, alert_id, alert_type, data, timestamp):
         alert_data = {
             'type': alert_type,
             'data': data,
-            'meta': meta
+            'timestamp': timestamp
         }
-        self.storage.save_alert(self._current_id, alert_data)
-        await self.queue.put((self._current_id, alert_data))
-        return self._current_id
+        await self.queue.put((alert_id, alert_data))
 
     def pause(self):
         self.is_processing = False
+        logger.warning(f"[AlertQueue] process_alerts paused...")
 
     def resume(self):
         self.is_processing = True
+        logger.warning(f"[AlertQueue] process_alerts resumed...")
+
+#=============================================================================================
+#=============================================================================================
+class StorageAlertQueue(AlertQueue):
+    def __init__(self, bot, delay=0.1, **kwargs):
+        super().__init__(bot, delay)
+        self.storage = StorageFactory.create_storage(**kwargs)
+
+    async def add_alert(self, alert_id, alert_type, data, timestamp):
+        alert_data = {
+            'type': alert_type,
+            'data': data,
+            'timestamp': timestamp
+        }
+        await self.storage.save_alert(alert_id, alert_data)
+        await self.queue.put((alert_id, alert_data))

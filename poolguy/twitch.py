@@ -4,8 +4,8 @@ from aiohttp import WSMsgType, WSServerHandshakeError
 from .utils import asyncio, ColorLogger, cmd_rate_limit
 from .twitchws import Alert, TwitchWS
 from .tester import inject_custom_twitchws_message, inject_twitchws_message, test_meta_data, test_payloads
-logger = ColorLogger(__name__)
 
+logger = ColorLogger(__name__)
 
 class TwitchBot:
     def __init__(self, cmd_prefix=['!', '~'], http_creds={}, ws_config={}, alert_objs={}, max_retries=3, retry_delay=30, login_browser="chrome", load_test_routes=False):
@@ -104,7 +104,6 @@ class TwitchBot:
                 self.add_alert_class(key, value)
         # start OAuth, websocket connection, and queue
         self._tasks = await self.ws.run(login_browser=self.login_browser)
-        self.channelBadges[str(self.http.user_id)] = await self.getChanBadges()
         await self.after_login()
         if hold:
             await self.hold()
@@ -114,15 +113,17 @@ class TwitchBot:
         logger.warning("Shutting down TwitchBot...")
         if not reset:
             self.is_running = False
-        if self.ws.connected:
-            await self.ws.close()
+        logger.warning("Closing TwitchWS...")
+        await self.ws.close()
         # Clear all tasks
+        logger.warning("Clearing tasks...")
         for task in self._tasks:
             if not task.done():
                 task.cancel()
         # Wait for tasks to complete
-        if self._tasks:
-            await asyncio.gather(*self._tasks, return_exceptions=True)
+        #if self._tasks:
+        #    logger.warning("Awaiting tasks...")
+        #    await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
         logger.warning("TwitchBot shutdown complete")
 
@@ -135,13 +136,11 @@ class TwitchBot:
     async def hold(self):
         try:
             await self.ws._disconnect_event.wait() # wait for ws to disconnect
-            await self.shutdown() # clean shutdown
         except asyncio.CancelledError: # tasks cancelled, this is fine
             logger.warning("Bot tasks cancelled")
         except Exception as e: # unexpected error, complete shutdown
             logger.error(f"Error in TwitchBot.hold(): {e}")
-            await self.shutdown()
-            raise e # raise error
+        await self.shutdown()
         if self.is_running: # we shutdown but are still running
             self.retry_count += 1 # try again?
             logger.warning(f"WebSocket disconnected. Attempt {self.retry_count} of {self.max_retries}")
