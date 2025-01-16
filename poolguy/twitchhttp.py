@@ -80,6 +80,7 @@ class RequestHandler:
         bro.open(self.get_auth_url(), new=1)
         # Wait for the token to be set in the callback
         await self._token_event.wait()
+        logger.info("OAuth flow finished.")
     
     def get_auth_url(self):
         """Generates the OAuth authorization URL."""

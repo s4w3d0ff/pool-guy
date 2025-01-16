@@ -11,12 +11,12 @@ import threading
 from abc import ABC, abstractmethod
 from collections import OrderedDict, defaultdict
 from urllib.parse import urlparse, urlencode
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 
 # Third-party imports
 import websockets
-import aiohttp
+import aiohttp, aiofiles
 from dateutil import parser
 
 closeBrowser = """
@@ -86,6 +86,7 @@ def randString(length=12):
 def updateFile(file_path, text):
     with open(file_path, "w") as file:
         file.write(text)
+        logger.debug(f"[updateFile] {file_path}")
 
 def loadJSON(filename):
     """ Load json file """
@@ -94,13 +95,26 @@ def loadJSON(filename):
         logger.debug(f"[loadJSON] {filename}")
         return out
 
-def saveJSON(data, filename):
+def saveJSON(data, filename, str_fmat=False):
     """ Save data as json to a file """
     with open(filename, 'w') as f:
-        out = json.dump(data, f, indent=4)
+        json.dump(data, f, indent=4)
         logger.debug(f"[saveJSON] {filename}")
-        return out
 
+async def aioUpdateFile(file_path, text):
+    async with aiofiles.open(file_path, "w") as file:
+        await file.write(text)
+        logger.debug(f"[aioUpdateFile] {file_path}")
+
+async def aioLoadJSON(filename):
+    async with aiofiles.open(filename, 'r') as file:
+        content = await file.read()
+        return json.loads(content)
+
+async def aioSaveJSON(data, filename):
+    async with aiofiles.open(filename, 'w') as file:
+        await file.write(json.dumps(data, indent=4))
+        
 def delete_file_if_exists(file_path):
     if os.path.exists(file_path):
         os.remove(file_path)
@@ -183,7 +197,7 @@ def cmd_rate_limit(calls=2, period=10, warn_cooldown=5):
                 if current_time - state['last_warning'] > warn_cooldown:
                     wait_time = period - (current_time - state['calls'][0])
                     await self.http.sendChatMessage(
-                        f"@{user['username']}, please wait {wait_time:.1f}s before using this command again.",
+                        f"@{user['username']} Please wait {wait_time:.1f}s before using this command again.",
                         broadcaster_id=channel["broadcaster_id"]
                     )
                     state['last_warning'] = current_time

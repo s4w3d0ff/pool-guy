@@ -1,37 +1,86 @@
-from .utils import os, json, datetime
+from .utils import os, json
+from .utils import ColorLogger
+from .utils import aioLoadJSON, aioSaveJSON, datetime, timedelta
+from abc import ABC, abstractmethod
+import glob
 
-class BaseStorage:
-    def save_alert(self, alert_id, alert_data):
-        raise NotImplementedError
+logger = ColorLogger(__name__)
 
-    def load_alerts(self, date):
-        raise NotImplementedError
+class BaseStorage(ABC):
+    @abstractmethod
+    async def save_alert(self, alert_id, alert_data):
+        pass
+
+    @abstractmethod
+    async def load_alerts(self, date):
+        pass
+        
+#==================================================================
+#==================================================================
+
+class FakeStorage(BaseStorage):
+    async def save_alert(self, alert_id, alert_data):
+        logger.error(f"[FakeStorage] Fake save_alert triggered!")
+
+    async def load_alerts(self, date):
+        logger.error(f"[FakeStorage] Fake load_alerts triggered!")
+
+    async def clean_up(self):
+        logger.error(f"[FakeStorage] Fake clean_up triggered!")
+ 
+#==================================================================
+#==================================================================
 
 class JSONStorage(BaseStorage):
-    def __init__(self, storage_dir='db/alerts'):
+    def __init__(self, storage_dir='db/alerts', max_days=30*3):
         self.storage_dir = storage_dir
-        os.makedirs(self.storage_dir, exist_ok=True)
+        self.max_days = max_days
 
-    def save_alert(self, alert_id, alert_data):
+    async def save_alert(self, alert_id, alert_data):
         file_path = os.path.join(self.storage_dir, f"{datetime.utcnow().date()}.json")
         try:
-            if os.path.exists(file_path):
-                with open(file_path, 'r') as f:
-                    alerts = json.load(f)
-            else:
-                alerts = {}
+            alerts = await aioLoadJSON(file_path) if os.path.exists(file_path) else {}
         except json.JSONDecodeError:
             alerts = {}
         alerts[str(alert_id)] = alert_data
-        with open(file_path, 'w') as f:
-            json.dump(alerts, f, indent=4)
+        await aioSaveJSON(alerts, file_path)
 
-    def load_alerts(self, date):
+    async def load_alerts(self, date):
         file_path = os.path.join(self.storage_dir, f"{date}.json")
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"No alerts found for date {date}")
-        with open(file_path, 'r') as f:
-            return json.load(f)
+        return await aioLoadJSON(file_path)
+
+    async def clean_up(self):
+        try:
+            # Calculate the cutoff date
+            cutoff_date = datetime.utcnow() - timedelta(days=self.max_days)
+            removed_files = []
+            # Get all JSON files in the storage directory
+            os.makedirs(self.storage_dir, exist_ok=True)
+            json_pattern = os.path.join(self.storage_dir, '*.json')
+            for filepath in glob.glob(json_pattern):
+                filename = os.path.basename(filepath)
+                try:
+                    # Parse the date from filename (expects YYYY-MM-DD.json format)
+                    file_date = datetime.strptime(filename.split('.')[0], '%Y-%m-%d')
+                    # Check if file is older than cutoff date
+                    if file_date.date() < cutoff_date.date():
+                        os.remove(filepath)
+                        removed_files.append(filename)
+                        logger.debug(f"Removed old alert file: {filename}")
+                except (ValueError, OSError) as e:
+                    logger.error(f"Error processing {filename}: {str(e)}")
+                    continue
+            logger.info(f"Clean up complete. Removed: \n{removed_files}")
+            return removed_files
+
+        except Exception as e:
+            logger.error(f"Error during cleanup: {str(e)}")
+            raise
+        
+#==================================================================
+#==================================================================
 
 class MongoDBStorage(BaseStorage):
     def __init__(self, db_name='twitch_db', collection_name='alerts'):
@@ -51,6 +100,9 @@ class MongoDBStorage(BaseStorage):
     def load_alerts(self, date):
         alerts = self.collection.find({'meta.date': date})
         return {str(alert['_id']): alert for alert in alerts}
+        
+#==================================================================
+#==================================================================
 
 class SQLiteStorage(BaseStorage):
     def __init__(self, db_name='db/alerts/twitch_alerts.db'):
@@ -95,15 +147,23 @@ class SQLiteStorage(BaseStorage):
                 'meta': json.loads(row[3])
             }
         return alerts
+        
+#==================================================================
+#==================================================================
 
 class StorageFactory:
     @staticmethod
     def create_storage(storage_type, **kwargs):
-        if storage_type == 'json':
-            return JSONStorage(**kwargs)
-        elif storage_type == 'mongodb':
-            return MongoDBStorage(**kwargs)
-        elif storage_type == 'sqlite':
-            return SQLiteStorage(**kwargs)
-        else:
-            raise ValueError(f"Unknown storage type: {storage_type}")
+        match storage_type:
+            case 'json':
+                return JSONStorage(**kwargs)
+            case 'mongodb':
+                return MongoDBStorage(**kwargs)
+            case 'sqlite':
+                return SQLiteStorage(**kwargs)
+            case 'fake':
+                return FakeStorage(**kwargs)
+            case _:
+                logger.error(f"Unknown storage type: {storage_type}!")
+                logger.warning(f"Using 'FakeStorage' instead...")
+                return FakeStorage(**kwargs)
