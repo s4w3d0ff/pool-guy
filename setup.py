@@ -21,9 +21,10 @@ setup(
     ],
     python_requires=">=3.10",
     install_requires=[
-        "aiohttp>=3.8.0",      # For async HTTP requests and server
-        "websockets>=10.0",     # For WebSocket client connections
-        "python-dateutil>=2.8.2", # For date parsing
+        "aiohttp",         # async HTTP server
+        "websockets",      # WebSocket client
+        "python-dateutil", # date parsing
+        "aiofiles"         # async file editing
     ],
     extras_require={
         'mongodb': ['pymongo'],  # Optional MongoDB storage support
