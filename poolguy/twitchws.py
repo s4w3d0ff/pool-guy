@@ -29,7 +29,7 @@ class TwitchWS:
 
     async def run(self, login_browser=None):
         await self.http.login(login_browser)
-        logger.warning(f"Clearing orphaned event subs")
+        logger.info(f"Clearing orphaned event subs")
         await self.http.unsubAllEvents()
         if not self._socket_task:
             self._queue_task = asyncio.create_task(self.alert_queue.process_alerts())
@@ -39,7 +39,7 @@ class TwitchWS:
     async def socket_loop(self):
         self.socket = await websockets.connect(websocketURL)
         self.connected = True
-        logger.info(f"[socket_loop] started...")
+        logger.debug(f"[socket_loop] started...")
         while self.connected:
             try:
                 message = await self.socket.recv()
@@ -79,10 +79,10 @@ class TwitchWS:
         logger.warning(f"Subscribed websocket to:\n{json.dumps(list(self.channels.keys()), indent=2)}")
 
     async def handle_session_welcome(self, metadata, payload):
-        logger.warning(f"Session welcome recieved")
+        logger.info(f"Session welcome recieved")
         if not self.session_id:
             self.session_id = payload['session']['id']
-            logger.warning(f"session_id: {self.session_id}")
+            logger.debug(f"session_id: {self.session_id}")
             await self.after_init_welcome()
 
     async def handle_session_reconnect(self, metadata, payload):

@@ -48,7 +48,7 @@ class WebServer:
                 self.app.router.add_delete(path, handler, **kwargs)
             case _:
                 self.app.router.add_route(method, path, handler, **kwargs)
-        logger.info(f"Added {method} route for {path}")
+        logger.debug(f"Added {method} route for {path}")
 
     def add_websocket(self, path, handler, **kwargs):
         """Add a new WebSocket endpoint."""
@@ -74,7 +74,7 @@ class WebServer:
         }
         
         self.app.router.add_get(path, ws_wrapper)
-        logger.info(f"Added WebSocket endpoint at {path}")
+        logger.debug(f"Added WebSocket endpoint at {path}")
 
     async def start(self):
         """Start the web server."""
@@ -83,7 +83,7 @@ class WebServer:
             await self._runner.setup()
             self._site = web.TCPSite(self._runner, self.host, self.port)
             self._app_task = asyncio.create_task(self._site.start())
-            logger.info(f"Server started on {self.host}:{self.port}")
+            logger.warning(f"Server started on {self.host}:{self.port}")
 
     async def stop(self):
         """Stop the web server."""
