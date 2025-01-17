@@ -71,7 +71,7 @@ class RequestHandler:
         if not self.login_info:
             self.login_info = await self.validate_auth()
         self.user_id = self.login_info['user_id']
-        logger.warning(f'Logged in as: \n{json.dumps(self.login_info, indent=2)}')
+        logger.debug(f'Logged in as: \n{json.dumps(self.login_info, indent=2)}')
         return self.login_info
 
     async def start_oauth_flow(self, browser=None):
@@ -80,7 +80,7 @@ class RequestHandler:
         bro.open(self.get_auth_url(), new=1)
         # Wait for the token to be set in the callback
         await self._token_event.wait()
-        logger.info("OAuth flow finished.")
+        logger.warning("OAuth flow finished.")
     
     def get_auth_url(self):
         """Generates the OAuth authorization URL."""

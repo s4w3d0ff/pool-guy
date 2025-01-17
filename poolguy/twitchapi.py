@@ -152,7 +152,7 @@ class TwitchApi(RequestHandler):
                 condition = {'client_id': str(self.client_id)}
             case _:
                 condition = {'broadcaster_user_id': bid or uid}
-        logger.info(f'[createEventSub] -> {event}: {condition}')
+        logger.debug(f'[createEventSub] -> {event}: {condition}')
         try:
             data = {
                 "type": event,
@@ -638,7 +638,7 @@ class TwitchApi(RequestHandler):
             if sub['status'] == "enabled":
                 continue
             else:
-                logger.info(f"[deleteEventSub] -> {sub['type']} (Reason: '{sub['status']}')")
+                logger.debug(f"[deleteEventSub] -> {sub['type']} (Reason: '{sub['status']}')")
                 logger.debug(f"{sub['condition']}")
                 tasks.append(asyncio.create_task(self.deleteEventSub(sub['id'])))
         await asyncio.gather(*tasks)
