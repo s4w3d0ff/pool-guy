@@ -213,7 +213,7 @@ class CommandBot(TwitchBot):
         else:
             logger.debug(f"Unknown command: {command_name}")
 
-    @cmd_rate_limit(calls=3, period=30, warn_cooldown=15)
+    @cmd_rate_limit(calls=1, period=30, warn_cooldown=15)
     async def cmd_help(self, user, channel, args):
         """Shows available commands. Usage: !help [command]"""
         if args:
@@ -224,5 +224,5 @@ class CommandBot(TwitchBot):
             else:
                 help_text = f"Unknown command: '{command}' Available commands: " + ", ".join(self.commands.keys())
         else:
-            help_text = "Available commands: " + ", ".join(self.commands.keys())
+            help_text = f"Command Prefix: {', '.join(self._prefix)} Commands: " + ", ".join(self.commands.keys())
         await self.http.sendChatMessage(help_text, broadcaster_id=channel["broadcaster_id"])

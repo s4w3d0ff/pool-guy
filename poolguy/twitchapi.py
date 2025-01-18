@@ -211,7 +211,9 @@ class TwitchApi(RequestHandler):
     async def getChannelFollowers(self, broadcaster_id=None, first=None):
         method = "get"
         url = apiEndpoints['followers']
-        params = {"broadcaster_id": broadcaster_id or self.user_id, "first": first or 100}
+        params = {"broadcaster_id": broadcaster_id or self.user_id}
+        if first:
+            params["first"] = first
         r = await self.api_request(method, url, params=params)
         out = r['data']
         if 'cursor' in r['pagination'] and not first:
@@ -539,13 +541,15 @@ class TwitchApi(RequestHandler):
         r = await self.api_request(method, f"{url}?{query_string}")
         out = r['data']
         if 'cursor' in r['pagination'] and not first:
-            out += await self._continuePage(method, url, r['pagination'], params=kwargs)
+            out += await self._continuePage(method, f"{url}?{query_string}", r['pagination'], params=kwargs)
         return out
 
     async def getFollowedStreams(self, user_id=None, first=None):
         method = "get"
         url = f"{apiEndpoints['streams']}/followed"
-        params = {"user_id": user_id or self.user_id, "first": first or 20}
+        params = {"user_id": user_id or self.user_id}
+        if first:
+            params["first"] = first
         r = await self.api_request(method, url, params=params)
         out = r['data']
         if 'cursor' in r['pagination'] and not first:
