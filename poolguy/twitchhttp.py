@@ -1,6 +1,7 @@
 from .utils import aiohttp, asyncio, webbrowser, json, os
 from .utils import ColorLogger, closeBrowser, urlparse, urlencode
 from .webserver import WebServer
+from .twitchstorage import StorageFactory
 from aiohttp import web
 
 logger = ColorLogger(__name__)
@@ -10,7 +11,7 @@ oauthEndpoint = "https://id.twitch.tv/oauth2/authorize"
 validateEndoint = "https://id.twitch.tv/oauth2/validate"
 
 class RequestHandler:
-    def __init__(self, client_id, client_secret, redirect_uri, scopes):
+    def __init__(self, client_id, client_secret, redirect_uri, scopes, storage=None, storage_type='json'):
         # Parse redirect URI to get host, port, and path
         parsed_uri = urlparse(redirect_uri)
         self.callback_path = parsed_uri.path.lstrip('/')
@@ -22,10 +23,8 @@ class RequestHandler:
         self._token_event = asyncio.Event()
         self.login_info = None
         self.user_id = None
-        
-        # Initialize web server
+        self.storage = storage or StorageFactory.create_storage(storage_type=storage_type)
         self.server = WebServer(parsed_uri.hostname, parsed_uri.port)
-        
         # Register callback route
         self.server.add_route(f'/{self.callback_path}', self.callback_handler)
 
@@ -35,41 +34,30 @@ class RequestHandler:
         if not code:
             logger.error("No code provided in callback.")
             return web.Response(text="Error: No code provided", status=400)
-        
+        data = {
+            'client_id': self.client_id,
+            'client_secret': self.client_secret,
+            'code': code,
+            'grant_type': 'authorization_code',
+            'redirect_uri': self.redirect_uri
+            }
+        heads = {'Accept': 'application/json'}
         async with aiohttp.ClientSession() as session:
-            async with session.post(
-                tokenEndpoint,
-                data={
-                    'client_id': self.client_id,
-                    'client_secret': self.client_secret,
-                    'code': code,
-                    'grant_type': 'authorization_code',
-                    'redirect_uri': self.redirect_uri
-                },
-                headers={'Accept': 'application/json'}
-            ) as response:
+            async with session.post(tokenEndpoint, data=data, headers=heads) as response:
                 response.raise_for_status()
-                token_data = await response.json()
-                self.token = {
-                    "access_token": token_data['access_token'],
-                    "refresh_token": token_data['refresh_token']
-                }
+                self.token = await response.json()
+                await self.storage.save_token(self.token)
                 logger.info("Access token obtained and stored.")
                 self._token_event.set()
-                
-        return web.Response(
-            text=closeBrowser,
-            content_type='text/html',
-            charset='utf-8'
-        )
+        return web.Response(text=closeBrowser, content_type='text/html', charset='utf-8')
 
     async def login(self, browser=None):
         """Start the server and initiate OAuth flow."""
         await self.server.start()
+        self.token = await self.storage.load_token()
         if not self.token:
             await self.start_oauth_flow(browser)
-        if not self.login_info:
-            self.login_info = await self.validate_auth()
+        self.login_info = await self.validate_auth()
         self.user_id = self.login_info['user_id']
         logger.debug(f'Logged in as: \n{json.dumps(self.login_info, indent=2)}')
         return self.login_info
@@ -81,6 +69,7 @@ class RequestHandler:
         # Wait for the token to be set in the callback
         await self._token_event.wait()
         logger.warning("OAuth flow finished.")
+        self._token_event.clear()
     
     def get_auth_url(self):
         """Generates the OAuth authorization URL."""
@@ -101,8 +90,9 @@ class RequestHandler:
         }
     
     async def validate_auth(self):
+        heads = {'Authorization': f'OAuth {self.token.get("access_token")}'}
         async with aiohttp.ClientSession() as session:
-            async with session.get(validateEndoint, headers={'Authorization': f'OAuth {self.token.get("access_token")}'}) as response:
+            async with session.get(validateEndoint, headers=heads) as response:
                 response.raise_for_status()
                 auth_check = await response.json()
         logger.debug(f"Auth validation response: \n{json.dumps(auth_check, indent=2)}")
@@ -111,26 +101,21 @@ class RequestHandler:
     async def refresh_oauth_token(self):
         """Refreshes the OAuth token using the refresh token."""
         logger.warning("Refreshing OAuth token...")
+        data = {
+            'client_id': self.client_id,
+            'client_secret': self.client_secret,
+            'grant_type': 'refresh_token',
+            'refresh_token': urlencode(self.token.get('refresh_token'))
+        }
+        heads = {'Accept': 'application/json'}
         async with aiohttp.ClientSession() as session:
-            async with session.post(
-                tokenEndpoint,
-                data={
-                    'client_id': self.client_id,
-                    'client_secret': self.client_secret,
-                    'grant_type': 'refresh_token',
-                    'refresh_token': self.token.get('refresh_token')
-                },
-                headers={'Accept': 'application/json'}
-            ) as response:
+            async with session.post(tokenEndpoint, data=data, headers=heads) as response:
                 response.raise_for_status()
-                token_data = await response.json()
-                self.token = {
-                    "access_token": token_data['access_token'],
-                    "refresh_token": token_data['refresh_token']
-                }
+                self.token = await response.json()
+                await self.storage.save_token(self.token)
+                self.login_info = await self.validate_auth()
+                self.user_id = self.login_info['user_id']
                 logger.warning("OAuth token refreshed.")
-                await self.validate_auth()
-                return self.token
 
     async def api_request(self, method, url, *args, **kwargs):
         """Handles API requests with retry logic for expired tokens or rate limits."""
