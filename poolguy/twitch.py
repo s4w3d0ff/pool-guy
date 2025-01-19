@@ -3,20 +3,23 @@ from aiohttp import web
 from aiohttp import WSMsgType, WSServerHandshakeError
 from .utils import asyncio, ColorLogger, cmd_rate_limit, webbrowser
 from .twitchws import Alert, TwitchWS
-from .tester import inject_custom_twitchws_message, inject_twitchws_message, test_meta_data, test_payloads
+from .tester import inject_custom_twitchws_message, test_meta_data, test_payloads
 
 logger = ColorLogger(__name__)
 
 class TwitchBot:
-    def __init__(self, http_config={}, ws_config={}, alert_objs={}, max_retries=3, retry_delay=30, login_browser=None, load_test_routes=False):
+    def __init__(self, http_config={}, ws_config={}, alert_objs={}, max_retries=3, retry_delay=30, login_browser=None, storage=None):
         self.http_config = http_config
         self.ws_config = ws_config
         self.alert_objs = alert_objs
+        self.storage = storage
         self.ws = None
         self.http = None
         self.app = None
         self._tasks = []
         self.commands = {}
+        self.retry_count = 0
+        self.is_running = False
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         if isinstance(login_browser, dict):
@@ -24,10 +27,6 @@ class TwitchBot:
             webbrowser.register(self.login_browser, None, webbrowser.BackgroundBrowser(path))
         else:
             self.login_browser = login_browser
-        self.retry_count = 0
-        self.is_running = False
-        # optional test routes
-        self.load_test_routes = load_test_routes
 
     async def add_task(self, coro, *args, **kwargs):
         """ Adds a task to our list of tasks """
@@ -39,12 +38,11 @@ class TwitchBot:
     
     async def start(self, hold=True):
         self.is_running = True
-        self.ws = TwitchWS(bot=self, creds=self.http_config, **self.ws_config)
+        self.ws = TwitchWS(bot=self, creds=self.http_config, **self.ws_config, storage=self.storage)
         self.http = self.ws.http
         self.app = self.ws.http.server
+        self.storage = self.ws.storage
         self.register_routes()
-        if self.load_test_routes:
-            self._register_test_routes()
         if self.alert_objs:
             for key, value in self.alert_objs.items():
                 self.add_alert_class(key, value)
@@ -101,18 +99,96 @@ class TwitchBot:
         """Use to register app routes from a subclass when the webserver is being setup"""
         pass
 
-    #=====================================================================
-    #=====================================================================
+
+class CommandBot(TwitchBot):
+    def __init__(self, cmd_prefix=['!', '~'], *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._prefix = cmd_prefix
+        # Register commands
+        self._register_commands()
+
+    def _register_commands(self):
+        """Register all command handlers"""
+        # Get all methods that start with cmd_
+        for method_name in dir(self):
+            if method_name.startswith('cmd_'):
+                command_name = method_name[4:]  # Remove 'cmd_' prefix
+                method = getattr(self, method_name)
+                self.commands[command_name] = {
+                    'handler': method,
+                    'help': method.__doc__ or 'No help available.'
+                }
+        logger.info(f"Commands Registered: {list(self.commands.keys())}")
+
+    async def command_check(self, message, user, channel):
+        """Check if message starts with command prefix, handle command if needed"""
+        if any(message.startswith(prefix) for prefix in self._prefix):
+            await self._handle_command(message, user, channel)
+            return True
+        else:
+            return False
+
+    async def _handle_command(self, message, user, channel):
+        """Handle bot commands"""
+        # Remove prefix and split into command and args
+        command_text = message[1:].strip()
+        parts = command_text.split()
+        command_name = parts[0].lower()
+        args = parts[1:] if len(parts) > 1 else []
+        if command_name in self.commands:
+            try:
+                await self.commands[command_name]['handler'](user, channel, args)
+                logger.debug(f"Executed command: {command_name}")
+            except Exception as e:
+                logger.error(f"Error executing command {command_name}: {str(e)}")
+                await self.http.sendChatMessage(
+                    f"Failed to execute command: {command_name}", 
+                    broadcaster_id=channel["broadcaster_id"]
+                )
+        else:
+            logger.debug(f"Unknown command: {command_name}")
+
+    @cmd_rate_limit(calls=1, period=30, warn_cooldown=15)
+    async def cmd_help(self, user, channel, args):
+        """Shows available commands. Usage: !help [command]"""
+        if args:
+            # Show help for specific command
+            command = args[0].lower()
+            if command in self.commands:
+                help_text = f"{command}: {self.commands[command]['help']}"
+            else:
+                help_text = f"Unknown command: '{command}' Available commands: " + ", ".join(self.commands.keys())
+        else:
+            help_text = f"Command Prefix: {', '.join(self._prefix)} Commands: " + ", ".join(self.commands.keys())
+        await self.http.sendChatMessage(help_text, broadcaster_id=channel["broadcaster_id"])
+
+
+#=====================================================================
+#=====================================================================
+class Tester(CommandBot):
+    async def start(self, hold=True):
+        self.is_running = True
+        self.ws = TwitchWS(bot=self, creds=self.http_config, **self.ws_config, storage=self.storage)
+        self.http = self.ws.http
+        self.app = self.ws.http.server
+        self.storage = self.ws.storage
+        self.register_routes()
+        self._register_test_routes()
+        if self.alert_objs:
+            for key, value in self.alert_objs.items():
+                self.add_alert_class(key, value)
+        # start OAuth, websocket connection, and queue
+        self._tasks = await self.ws.run(login_browser=self.login_browser)
+        await self.after_login()
+        if hold:
+            await self.hold()
+        
     def _register_test_routes(self):
         @self.app.route('/testui')
         async def testui(request):
             async with aiofiles.open('templates/testui.html', 'r', encoding='utf-8') as f:
                 template = await f.read()
-                return web.Response(
-                    text=template,
-                    content_type='text/html',
-                    charset='utf-8'
-                )
+                return web.Response(text=template, content_type='text/html', charset='utf-8')
                 
         @self.app.route("/testcheer/{amount}/{anon}")
         async def testcheer(request):
@@ -162,67 +238,3 @@ class TwitchBot:
             )
             return web.json_response({"status": True})
         logger.info(f"[_register_test_routes]: Done")
-
-
-
-class CommandBot(TwitchBot):
-    def __init__(self, cmd_prefix=['!', '~'], *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._prefix = cmd_prefix
-        # Register commands
-        self._register_commands()
-
-    def _register_commands(self):
-        """Register all command handlers"""
-        # Get all methods that start with cmd_
-        for method_name in dir(self):
-            if method_name.startswith('cmd_'):
-                command_name = method_name[4:]  # Remove 'cmd_' prefix
-                method = getattr(self, method_name)
-                self.commands[command_name] = {
-                    'handler': method,
-                    'help': method.__doc__ or 'No help available.'
-                }
-        logger.info(f"Commands Registered: \n{list(self.commands.keys())}")
-
-    async def command_check(self, message, user, channel):
-        """Check if message starts with command prefix, handle command if needed"""
-        if any(message.startswith(prefix) for prefix in self._prefix):
-            await self._handle_command(message, user, channel)
-            return True
-        else:
-            return False
-
-    async def _handle_command(self, message, user, channel):
-        """Handle bot commands"""
-        # Remove prefix and split into command and args
-        command_text = message[1:].strip()
-        parts = command_text.split()
-        command_name = parts[0].lower()
-        args = parts[1:] if len(parts) > 1 else []
-        if command_name in self.commands:
-            try:
-                await self.commands[command_name]['handler'](user, channel, args)
-                logger.debug(f"Executed command: {command_name}")
-            except Exception as e:
-                logger.error(f"Error executing command {command_name}: {str(e)}")
-                await self.http.sendChatMessage(
-                    f"Failed to execute command: {command_name}", 
-                    broadcaster_id=channel["broadcaster_id"]
-                )
-        else:
-            logger.debug(f"Unknown command: {command_name}")
-
-    @cmd_rate_limit(calls=1, period=30, warn_cooldown=15)
-    async def cmd_help(self, user, channel, args):
-        """Shows available commands. Usage: !help [command]"""
-        if args:
-            # Show help for specific command
-            command = args[0].lower()
-            if command in self.commands:
-                help_text = f"{command}: {self.commands[command]['help']}"
-            else:
-                help_text = f"Unknown command: '{command}' Available commands: " + ", ".join(self.commands.keys())
-        else:
-            help_text = f"Command Prefix: {', '.join(self._prefix)} Commands: " + ", ".join(self.commands.keys())
-        await self.http.sendChatMessage(help_text, broadcaster_id=channel["broadcaster_id"])

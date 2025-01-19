@@ -9,16 +9,17 @@ logger = ColorLogger(__name__)
 websocketURL = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=600"
 
 class TwitchWS:
-    def __init__(self, bot=None, http=None, queue=None, creds={}, channels={"channel.chat.message": [None]}, queue_skip={"channel.chat.message"}, storage_type='json'):
+    def __init__(self, bot=None, http=None, queue=None, creds={}, channels={"channel.chat.message": [None]}, queue_skip={"channel.chat.message"}, storage=None, storage_type='json'):
         self.bot = bot
-        self.http = http or TwitchApi(**creds)
-        self.alert_queue = queue or StorageAlertQueue(bot=bot, storage_type=storage_type)
+        self.http = http or TwitchApi(**creds, storage=storage, storage_type=storage_type)
+        self.storage = self.http.storage
+        self.alert_queue = queue or StorageAlertQueue(bot=bot, storage=self.storage)
         self.channels = channels
         self.queue_skip = queue_skip
         self.socket = None
         self.connected = False
         self.session_id = None
-        self.seen_messages = MaxSizeDict(42)
+        self.seen_messages = MaxSizeDict(20)
         self._queue_task = None
         self._socket_task = None
         self._disconnect_event = asyncio.Event()
@@ -58,6 +59,10 @@ class TwitchWS:
         # stop socket
         logger.warning(f"[close] closing socket...")
         self.connected = False
+        try:
+            await self.socket.close()
+        except:
+            pass
         # stop webserver app
         logger.warning(f"[close] stopping webserver...")
         await self.http.server.stop()
@@ -272,9 +277,9 @@ class AlertQueue:
 #=============================================================================================
 #=============================================================================================
 class StorageAlertQueue(AlertQueue):
-    def __init__(self, bot, delay=0.1, **kwargs):
+    def __init__(self, bot, delay=0.1, storage=None, **kwargs):
         super().__init__(bot, delay)
-        self.storage = StorageFactory.create_storage(**kwargs)
+        self.storage = storage or StorageFactory.create_storage(**kwargs)
 
     async def add_alert(self, alert_id, alert_type, data, timestamp):
         alert_data = {
