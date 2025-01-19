@@ -11,7 +11,7 @@ oauthEndpoint = "https://id.twitch.tv/oauth2/authorize"
 validateEndoint = "https://id.twitch.tv/oauth2/validate"
 
 class RequestHandler:
-    def __init__(self, client_id, client_secret, redirect_uri, scopes, storage=None, storage_type='json'):
+    def __init__(self, client_id, client_secret, redirect_uri, scopes, storage=None, storage_type='json', static_dirs=[]):
         # Parse redirect URI to get host, port, and path
         parsed_uri = urlparse(redirect_uri)
         self.callback_path = parsed_uri.path.lstrip('/')
@@ -24,7 +24,7 @@ class RequestHandler:
         self.login_info = None
         self.user_id = None
         self.storage = storage or StorageFactory.create_storage(storage_type=storage_type)
-        self.server = WebServer(parsed_uri.hostname, parsed_uri.port)
+        self.server = WebServer(parsed_uri.hostname, parsed_uri.port, static_dirs=static_dirs)
         # Register callback route
         self.server.add_route(f'/{self.callback_path}', self.callback_handler)
 
@@ -57,7 +57,11 @@ class RequestHandler:
         self.token = await self.storage.load_token()
         if not self.token:
             await self.start_oauth_flow(browser)
-        self.login_info = await self.validate_auth()
+        try:
+            self.login_info = await self.validate_auth()
+        except:
+            await self.start_oauth_flow(browser)
+            self.login_info = await self.validate_auth()
         self.user_id = self.login_info['user_id']
         logger.debug(f'Logged in as: \n{json.dumps(self.login_info, indent=2)}')
         return self.login_info
@@ -105,7 +109,7 @@ class RequestHandler:
             'client_id': self.client_id,
             'client_secret': self.client_secret,
             'grant_type': 'refresh_token',
-            'refresh_token': urlencode(self.token.get('refresh_token'))
+            'refresh_token': self.token.get('refresh_token')
         }
         heads = {'Accept': 'application/json'}
         async with aiohttp.ClientSession() as session:
