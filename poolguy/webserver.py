@@ -8,7 +8,7 @@ from .utils import ColorLogger, urlparse, urlencode
 logger = ColorLogger(__name__)
 
 class WebServer:
-    def __init__(self, host, port, static_dirs=[]):
+    def __init__(self, host, port):
         self.app = web.Application()
         self.host = host
         self.port = port
@@ -17,12 +17,6 @@ class WebServer:
         self._app_task = None
         self.routes = {}
         self.ws_handlers = {}
-        self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.static_dirs = static_dirs
-        for dir in static_dirs:
-            s_dir = os.path.join(self.base_dir, dir)
-            os.makedirs(s_dir, exist_ok=True)
-            self.app.router.add_static(f'/{dir}/', s_dir)
 
     def add_route(self, path, handler, method='GET', **kwargs):
         """Add a new route to the application."""

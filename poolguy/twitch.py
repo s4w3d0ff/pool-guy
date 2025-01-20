@@ -8,7 +8,7 @@ from .tester import inject_custom_twitchws_message, test_meta_data, test_payload
 logger = ColorLogger(__name__)
 
 class TwitchBot:
-    def __init__(self, http_config={}, ws_config={}, alert_objs={}, max_retries=3, retry_delay=30, login_browser=None, storage=None):
+    def __init__(self, http_config={}, ws_config={}, alert_objs={}, max_retries=3, retry_delay=30, login_browser=None, storage=None, static_dirs=[]):
         self.http_config = http_config
         self.ws_config = ws_config
         self.alert_objs = alert_objs
@@ -18,6 +18,7 @@ class TwitchBot:
         self.app = None
         self._tasks = []
         self.commands = {}
+        self.static_dirs = static_dirs
         self.retry_count = 0
         self.is_running = False
         self.max_retries = max_retries
@@ -38,7 +39,7 @@ class TwitchBot:
     
     async def start(self, hold=True):
         self.is_running = True
-        self.ws = TwitchWS(bot=self, creds=self.http_config, **self.ws_config, storage=self.storage)
+        self.ws = TwitchWS(bot=self, creds=self.http_config, **self.ws_config, storage=self.storage, static_dirs=self.static_dirs)
         self.http = self.ws.http
         self.app = self.ws.http.server
         self.storage = self.ws.storage
@@ -168,7 +169,7 @@ class CommandBot(TwitchBot):
 class Tester(CommandBot):
     async def start(self, hold=True):
         self.is_running = True
-        self.ws = TwitchWS(bot=self, creds=self.http_config, **self.ws_config, storage=self.storage)
+        self.ws = TwitchWS(bot=self, creds=self.http_config, **self.ws_config, storage=self.storage, static_dirs=self.static_dirs)
         self.http = self.ws.http
         self.app = self.ws.http.server
         self.storage = self.ws.storage
