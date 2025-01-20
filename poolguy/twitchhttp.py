@@ -24,7 +24,13 @@ class RequestHandler:
         self.login_info = None
         self.user_id = None
         self.storage = storage or StorageFactory.create_storage(storage_type=storage_type)
-        self.server = WebServer(parsed_uri.hostname, parsed_uri.port, static_dirs=static_dirs)
+        self.server = WebServer(parsed_uri.hostname, parsed_uri.port)
+        self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.static_dirs = static_dirs
+        for dir in self.static_dirs:
+            s_dir = os.path.join(self.base_dir, dir)
+            os.makedirs(s_dir, exist_ok=True)
+            self.server.app.router.add_static(f'/{dir}/', s_dir)
         # Register callback route
         self.server.add_route(f'/{self.callback_path}', self.callback_handler)
 

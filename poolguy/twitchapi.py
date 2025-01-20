@@ -132,24 +132,21 @@ class TwitchApi(RequestHandler):
         if bid:
             bid = str(bid)
         match event:
-            case 'channel.follow':
-                condition = {'broadcaster_user_id': bid or uid, 'moderator_user_id': uid}
-            case 'channel.chat.message':
+            case 'channel.chat.message' | 'channel.chat.notification' | 'channel.chat.clear':
                 condition = {'broadcaster_user_id': bid or uid, 'user_id': uid}
-            case 'channel.chat.clear':
-                condition = {'broadcaster_user_id': bid or uid, 'user_id': uid}
+                
             case 'channel.raid':
                 condition = {'to_broadcaster_user_id': uid}
-            case 'channel.shield_mode.begin':
+                
+            case 'channel.follow' | 'channel.shield_mode.begin' | 'channel.shield_mode.end':
                 condition = {'broadcaster_user_id': bid or uid, 'moderator_user_id': uid}
-            case 'channel.shield_mode.end':
-                condition = {'broadcaster_user_id': bid or uid, 'moderator_user_id': uid}
+                
             case 'user.update':
                 condition = {'user_id': uid}
-            case 'user.authorization.grant':
+                
+            case 'user.authorization.grant' | 'user.authorization.revoke':
                 condition = {'client_id': str(self.client_id)}
-            case 'user.authorization.revoke':
-                condition = {'client_id': str(self.client_id)}
+                
             case _:
                 condition = {'broadcaster_user_id': bid or uid}
         logger.debug(f'[createEventSub] -> {event}: {condition}')

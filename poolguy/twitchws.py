@@ -9,9 +9,9 @@ logger = ColorLogger(__name__)
 websocketURL = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=600"
 
 class TwitchWS:
-    def __init__(self, bot=None, http=None, queue=None, creds={}, channels={"channel.chat.message": [None]}, queue_skip={"channel.chat.message"}, storage=None, storage_type='json'):
+    def __init__(self, bot=None, http=None, queue=None, creds={}, channels={"channel.chat.message": [None]}, queue_skip={"channel.chat.message"}, storage=None, storage_type='json', static_dirs=[]):
         self.bot = bot
-        self.http = http or TwitchApi(**creds, storage=storage, storage_type=storage_type)
+        self.http = http or TwitchApi(**creds, storage=storage, storage_type=storage_type, static_dirs=static_dirs)
         self.storage = self.http.storage
         self.alert_queue = queue or StorageAlertQueue(bot=bot, storage=self.storage)
         self.channels = channels
