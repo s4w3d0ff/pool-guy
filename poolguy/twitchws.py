@@ -1,4 +1,4 @@
-from .utils import json, asyncio, websockets, time
+from .utils import json, asyncio, websockets
 from .utils import MaxSizeDict, ColorLogger, ABC
 from .utils import convert2epoch, abstractmethod
 from .twitchstorage import StorageFactory
@@ -9,9 +9,9 @@ logger = ColorLogger(__name__)
 websocketURL = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=600"
 
 class TwitchWS:
-    def __init__(self, bot=None, http=None, queue=None, creds={}, channels={"channel.chat.message": [None]}, queue_skip={"channel.chat.message"}, storage=None, storage_type='json', static_dirs=[]):
+    def __init__(self, bot=None, http=None, queue=None, creds={}, channels={"channel.chat.message": [None]}, queue_skip={"channel.chat.message"}, **kwargs):
         self.bot = bot
-        self.http = http or TwitchApi(**creds, storage=storage, storage_type=storage_type, static_dirs=static_dirs)
+        self.http = http or TwitchApi(**creds, **kwargs)
         self.storage = self.http.storage
         self.alert_queue = queue or StorageAlertQueue(bot=bot, storage=self.storage)
         self.channels = channels
@@ -71,7 +71,6 @@ class TwitchWS:
         self.alert_queue.is_running = False
         logger.warning(f"[close] awaiting _queue_task...")
         # TODO: add a way to save anything left in the queue during shutdown
-
         
     async def after_init_welcome(self):
         for chan in self.channels:

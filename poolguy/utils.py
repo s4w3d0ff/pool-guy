@@ -13,28 +13,22 @@ from collections import OrderedDict, defaultdict
 from urllib.parse import urlparse, urlencode
 from datetime import datetime, timedelta
 from functools import wraps
-
 # Third-party imports
 import websockets
-import aiohttp, aiofiles
+import aiohttp
+import aiofiles
 from dateutil import parser
 
 closeBrowser = """
 <!DOCTYPE html>
 <html lang="en">
-    <head>
-        <script>
-            function closeWindow() {
-                window.close();
-            };
-        </script>
-    </head>
-    <body>
-        <button id="closeButton" onclick="closeWindow()">Close Window</button>
-        <script>
-            document.getElementById("closeButton").click();
-        </script>
-    </body>
+<head>
+    <script>function closeWindow() {window.close();};</script>
+</head>
+<body>
+    <button id="closeButton" onclick="closeWindow()">Close Window</button>
+    <script>document.getElementById("closeButton").click();</script>
+</body>
 </html>
 """
     
@@ -178,19 +172,15 @@ def cmd_rate_limit(calls=2, period=10, warn_cooldown=5):
             pass
     """
     def decorator(func):
-        # Store the rate limit state for this command
         if not hasattr(func, '_rate_limit_state'):
             func._rate_limit_state = defaultdict(lambda: {"calls": [], "last_warning": 0})
-            
         @wraps(func)
         async def wrapper(self, user, channel, args):
             current_time = time.time()
             user_id = user['user_id']
             state = func._rate_limit_state[user_id]
-            
             # Clean up old calls
             state['calls'] = [t for t in state['calls'] if current_time - t < period]
-            
             # Check if user has exceeded rate limit
             if len(state['calls']) >= calls:
                 # Only send warning message every "warn_cooldown" seconds to prevent spam
@@ -202,12 +192,9 @@ def cmd_rate_limit(calls=2, period=10, warn_cooldown=5):
                     )
                     state['last_warning'] = current_time
                 return
-            
             # Add current call to the list
             state['calls'].append(current_time)
-            
             # Execute the command
             return await func(self, user, channel, args)
-            
         return wrapper
     return decorator
