@@ -1,14 +1,11 @@
-import functools
-# Third-party imports
-from aiohttp import web, WSMsgType
-# Local imports
-from .utils import webbrowser, json, asyncio, os
-from .utils import ColorLogger, urlparse, urlencode
+from .utils import asyncio, os, aiohttp
+from .utils import ColorLogger, urlparse, wraps
+from aiohttp import web
 
 logger = ColorLogger(__name__)
 
 class WebServer:
-    def __init__(self, host, port):
+    def __init__(self, host, port, static_dirs=[]):
         self.app = web.Application()
         self.host = host
         self.port = port
@@ -17,10 +14,25 @@ class WebServer:
         self._app_task = None
         self.routes = {}
         self.ws_handlers = {}
+        self.static_dirs = static_dirs
+        self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    def is_running(self):
+        return True if self._app_task else False
+
+    def add_static_dirs(self):
+        if self.is_running():
+            logger.warning("Adding a static dir after server started - requires restart to take effect")
+            
+        for dir in self.static_dirs:
+            s_dir = os.path.join(self.base_dir, dir)
+            os.makedirs(s_dir, exist_ok=True)
+            self.app.router.add_static(f'/{dir}/', s_dir)
+            logger.info(f"Added static dir '/{dir}/': {s_dir}")
 
     def add_route(self, path, handler, method='GET', **kwargs):
         """Add a new route to the application."""
-        if self._runner is not None:
+        if self.is_running():
             logger.warning("Adding route after server started - requires restart to take effect")
             
         route_info = {
@@ -40,18 +52,17 @@ class WebServer:
                 self.app.router.add_delete(path, handler, **kwargs)
             case _:
                 self.app.router.add_route(method, path, handler, **kwargs)
-        logger.debug(f"Added {method} route for {path}")
+        logger.info(f"Added {method} route for {path}")
 
     def add_websocket(self, path, handler, **kwargs):
         """Add a new WebSocket endpoint."""
-        if self._runner is not None:
+        if self.is_running():
             logger.warning("Adding WebSocket after server started - requires restart to take effect")
 
-        @functools.wraps(handler)
+        @wraps(handler)
         async def ws_wrapper(request):
             ws = web.WebSocketResponse(**kwargs)
             await ws.prepare(request)
-            
             try:
                 await handler(ws, request)
             except Exception as e:
@@ -66,11 +77,12 @@ class WebServer:
         }
         
         self.app.router.add_get(path, ws_wrapper)
-        logger.debug(f"Added WebSocket endpoint at {path}")
+        logger.info(f"Added WebSocket endpoint at {path}")
 
     async def start(self):
         """Start the web server."""
         if not self._app_task:
+            self.add_static_dirs()
             self._runner = web.AppRunner(self.app)
             await self._runner.setup()
             self._site = web.TCPSite(self._runner, self.host, self.port)
@@ -84,13 +96,13 @@ class WebServer:
         if self._runner:
             await self._runner.cleanup()
         self._app_task = None
-        logger.info("Server stopped")
+        logger.warning("Server stopped")
 
     async def restart(self):
-        """Restart the server to apply new routes/websockets."""
+        """Restart the server to apply new routes/websockets or whatever."""
         await self.stop()
         await self.start()
-        logger.info("Server restarted with updated routes")
+        logger.info("Server restarted.")
 
     def route(self, path, method='GET', **kwargs):
         """Decorator for registering routes."""

@@ -12,27 +12,22 @@ validateEndoint = "https://id.twitch.tv/oauth2/validate"
 
 class RequestHandler:
     def __init__(self, client_id, client_secret, redirect_uri, scopes, storage=None, storage_type='json', static_dirs=[]):
-        # Parse redirect URI to get host, port, and path
-        parsed_uri = urlparse(redirect_uri)
-        self.callback_path = parsed_uri.path.lstrip('/')
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
         self.scopes = scopes
         self.token = None
-        self._token_event = asyncio.Event()
         self.login_info = None
         self.user_id = None
+        self._token_event = asyncio.Event()
+        # Token storage
         self.storage = storage or StorageFactory.create_storage(storage_type=storage_type)
-        self.server = WebServer(parsed_uri.hostname, parsed_uri.port)
-        self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # Webserver setup
         self.static_dirs = static_dirs
-        for dir in self.static_dirs:
-            s_dir = os.path.join(self.base_dir, dir)
-            os.makedirs(s_dir, exist_ok=True)
-            self.server.app.router.add_static(f'/{dir}/', s_dir)
-        # Register callback route
-        self.server.add_route(f'/{self.callback_path}', self.callback_handler)
+        parsed_uri = urlparse(self.redirect_uri)
+        self.server = WebServer(parsed_uri.hostname, parsed_uri.port, self.static_dirs)
+        callback_path = parsed_uri.path.lstrip('/')
+        self.server.add_route(f'/{callback_path}', self.callback_handler)
 
     async def callback_handler(self, request):
         """Handles the OAuth callback."""
@@ -59,15 +54,31 @@ class RequestHandler:
 
     async def login(self, browser=None):
         """Start the server and initiate OAuth flow."""
-        await self.server.start()
-        self.token = await self.storage.load_token()
+        server_route_len = len(self.server.routes)+len(self.server.ws_handlers)+len(self.server.static_dirs)
+        if server_route_len > 1 and not self.server.is_running():
+            await self.server.start()
         if not self.token:
+            # try to load token from storage
+            self.token = await self.storage.load_token()
+        if not self.token:
+            # still no token, get a new one
+            if not self.server.is_running():
+                # make sure we have the webserver running
+                await self.server.start()
+            # get new token
             await self.start_oauth_flow(browser)
         try:
+            # validate token
             self.login_info = await self.validate_auth()
         except:
+            # validation failed, get a new token
             await self.start_oauth_flow(browser)
+            # validate token
             self.login_info = await self.validate_auth()
+        if server_route_len <= 1 and self.server.is_running():
+            logger.warning(f'No routes or static dirs found')
+            await self.server.stop()
+        # login success
         self.user_id = self.login_info['user_id']
         logger.debug(f'Logged in as: \n{json.dumps(self.login_info, indent=2)}')
         return self.login_info
@@ -100,6 +111,7 @@ class RequestHandler:
         }
     
     async def validate_auth(self):
+        """Validate currently loaded OAuth token"""
         heads = {'Authorization': f'OAuth {self.token.get("access_token")}'}
         async with aiohttp.ClientSession() as session:
             async with session.get(validateEndoint, headers=heads) as response:

@@ -1,8 +1,6 @@
 from .utils import os, json
-from .utils import ColorLogger
+from .utils import ColorLogger, ABC, abstractmethod
 from .utils import aioLoadJSON, aioSaveJSON, datetime, timedelta
-from abc import ABC, abstractmethod
-import glob
 
 logger = ColorLogger(__name__)
 
@@ -51,17 +49,20 @@ class JSONStorage(BaseStorage):
         self.max_days = max_days
 
     async def save_token(self, token):
+        """ Saves OAuth token to database"""
         file_path = os.path.join(self.storage_dir, "token.json")
         await aioSaveJSON(token, file_path)
 
     async def load_token(self):
+        """ Gets saved OAuth token from database"""
         file_path = os.path.join(self.storage_dir, "token.json")
         if not os.path.exists(file_path):
             logger.warning(f"No token.json found")
-            return False
+            return None
         return await aioLoadJSON(file_path)
 
     async def save_alert(self, alert_id, alert_data):
+        """ Saves an alert to the database """
         file_path = os.path.join(self.storage_dir, f"alerts/{datetime.utcnow().date()}.json")
         try:
             alerts = await aioLoadJSON(file_path) if os.path.exists(file_path) else {}
@@ -71,13 +72,16 @@ class JSONStorage(BaseStorage):
         await aioSaveJSON(alerts, file_path)
 
     async def load_alerts(self, date):
+        """ Loads alerts from <date> """
         file_path = os.path.join(self.storage_dir, f"alerts/{date}.json")
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"No alerts found for date {date}")
         return await aioLoadJSON(file_path)
 
     async def clean_up(self):
+        """ Cleans up database """
         try:
+            import glob
             # Calculate the cutoff date
             cutoff_date = datetime.utcnow() - timedelta(days=self.max_days)
             removed_files = []
@@ -114,13 +118,13 @@ class MongoDBStorage(BaseStorage):
         except ImportError:
             raise ImportError("pymongo is not installed. Please install it to use MongoDBStorage.")
         
-    def create_table(self):
+    async def clean_up(self):
         pass
         
-    def save_alert(self, alert_id, alert_data):
+    async def save_alert(self, alert_id, alert_data):
         pass
 
-    def load_alerts(self, date):
+    async def load_alerts(self, date):
         pass
 
     async def save_token(self, token):
@@ -139,7 +143,7 @@ class SQLiteStorage(BaseStorage):
         except ImportError:
             raise ImportError("sqlite3 is not installed. Please ensure it is available in your Python environment.")
 
-    async def create_table(self):
+    async def clean_up(self):
         pass
         
     async def save_alert(self, alert_id, alert_data):

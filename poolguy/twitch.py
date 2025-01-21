@@ -1,9 +1,8 @@
-import aiofiles
-from aiohttp import web
-from aiohttp import WSMsgType, WSServerHandshakeError
-from .utils import asyncio, ColorLogger, cmd_rate_limit, webbrowser
+from .utils import asyncio, aiofiles, webbrowser, aiohttp
+from .utils import ColorLogger, cmd_rate_limit
 from .twitchws import Alert, TwitchWS
 from .tester import inject_custom_twitchws_message, test_meta_data, test_payloads
+from aiohttp import web
 
 logger = ColorLogger(__name__)
 
@@ -48,7 +47,7 @@ class TwitchBot:
             for key, value in self.alert_objs.items():
                 self.add_alert_class(key, value)
         # start OAuth, websocket connection, and queue
-        self._tasks = await self.ws.run(login_browser=self.login_browser)
+        self._tasks = await self.ws.run(self.login_browser)
         await self.after_login()
         if hold:
             await self.hold()
