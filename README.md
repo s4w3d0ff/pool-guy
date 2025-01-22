@@ -108,7 +108,7 @@ class ExampleBot(CommandBot):
         logger.warning(f'my_loop stopped')
 
     async def after_login(self):
-        await self.add_task(self.deez_loop)
+        await self.add_task(self.my_loop)
 
 
 if __name__ == '__main__':
