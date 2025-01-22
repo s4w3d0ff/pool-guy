@@ -1,8 +1,6 @@
 from .utils import asyncio, aiofiles, webbrowser, aiohttp
-from .utils import ColorLogger, cmd_rate_limit
+from .utils import ColorLogger, cmd_rate_limit, web
 from .twitchws import Alert, TwitchWS
-from .tester import inject_custom_twitchws_message, test_meta_data, test_payloads
-from aiohttp import web
 
 logger = ColorLogger(__name__)
 
@@ -161,80 +159,3 @@ class CommandBot(TwitchBot):
         else:
             help_text = f"Command Prefix: {', '.join(self._prefix)} Commands: " + ", ".join(self.commands.keys())
         await self.http.sendChatMessage(help_text, broadcaster_id=channel["broadcaster_id"])
-
-
-#=====================================================================
-#=====================================================================
-class Tester(CommandBot):
-    async def start(self, hold=True):
-        self.is_running = True
-        self.ws = TwitchWS(bot=self, creds=self.http_config, **self.ws_config, storage=self.storage, static_dirs=self.static_dirs)
-        self.http = self.ws.http
-        self.app = self.ws.http.server
-        self.storage = self.ws.storage
-        self.register_routes()
-        self._register_test_routes()
-        if self.alert_objs:
-            for key, value in self.alert_objs.items():
-                self.add_alert_class(key, value)
-        # start OAuth, websocket connection, and queue
-        self._tasks = await self.ws.run(login_browser=self.login_browser)
-        await self.after_login()
-        if hold:
-            await self.hold()
-        
-    def _register_test_routes(self):
-        @self.app.route('/testui')
-        async def testui(request):
-            async with aiofiles.open('templates/testui.html', 'r', encoding='utf-8') as f:
-                template = await f.read()
-                return web.Response(text=template, content_type='text/html', charset='utf-8')
-                
-        @self.app.route("/testcheer/{amount}/{anon}")
-        async def testcheer(request):
-            payload = test_payloads["channel.cheer"]
-            payload["event"]["bits"] = int(request.match_info['amount'])
-            payload["event"]["is_anonymous"] = False if request.match_info['anon'] == 'False' else True
-            await inject_custom_twitchws_message(
-                self.ws, 
-                {"metadata": test_meta_data(), "payload": payload}
-            )
-            return web.json_response({"status": True})
-        
-        @self.app.route("/testsub/{tier}/{gifted}")
-        async def testsub(request):
-            payload = test_payloads["channel.subscribe"]
-            payload["event"]["tier"] = request.match_info['tier'],
-            payload["event"]["is_gift"] = False if request.match_info['gifted'] == 'False' else True
-            await inject_custom_twitchws_message(
-                self.ws, 
-                {"metadata": test_meta_data(), "payload": payload}
-            )
-            return web.json_response({"status": True})
-
-
-        @self.app.route("/testsubgift/{amount}/{tier}/{anon}")
-        async def testsubgift(request):
-            payload = test_payloads["channel.subscription.gift"]
-            payload["event"]["total"] = int(request.match_info['amount']),
-            payload["event"]["tier"] = request.match_info['tier'],
-            payload["event"]["is_anonymous"] = False if request.match_info['anon'] == 'False' else True
-            await inject_custom_twitchws_message(
-                self.ws, 
-                {"metadata": test_meta_data(), "payload": payload}
-            )
-            return web.json_response({"status": True})
-
-        @self.app.route("/testsubmessage/{months}/{tier}/{streak}/{duration}")
-        async def testsubmessage(request):
-            payload = test_payloads["channel.subscription.message"]
-            payload["event"]["tier"] = request.match_info['tier'],
-            payload["event"]["cumulative_months"] = int(request.match_info['months']),
-            payload["event"]["streak_months"] = int(request.match_info['streak']),
-            payload["event"]["duration_months"] = int(request.match_info['duration'])
-            await inject_custom_twitchws_message(
-                self.ws, 
-                {"metadata": test_meta_data(), "payload": payload}
-            )
-            return web.json_response({"status": True})
-        logger.info(f"[_register_test_routes]: Done")

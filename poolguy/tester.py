@@ -1,11 +1,16 @@
-from datetime import datetime, timezone
-from .utils import json, asyncio
-from .utils import randString
+from .utils import json, asyncio, aiofiles, aiohttp
+from .utils import randString, datetime, timezone, timedelta
+from .utils import ColorLogger, web
+from .twitchws import TwitchWS
+from .twitch import CommandBot
+
+logger = ColorLogger(__name__)
+
 
 test_payloads = {
     "channel.follow": {
         "subscription": {
-            "id": randString(),
+            "id": "test_"+randString(),
             "type": "channel.follow"
         },
         "event": {
@@ -20,7 +25,7 @@ test_payloads = {
     },
     "channel.cheer": {
         "subscription": {
-            "id": randString(),
+            "id": "test_"+randString(),
             "type": "channel.cheer",
         },
         "event": {
@@ -37,7 +42,7 @@ test_payloads = {
     },
     "channel.subscribe": {
         "subscription": {
-            "id": randString(),
+            "id": "test_"+randString(),
             "type": "channel.subscribe"
         },
         "event": {
@@ -53,7 +58,7 @@ test_payloads = {
     },
     "channel.subscription.gift": {
         "subscription": {
-            "id": randString(),
+            "id": "test_"+randString(),
             "type": "channel.subscription.gift"
         },
         "event": {
@@ -71,7 +76,7 @@ test_payloads = {
     },
     "channel.subscription.message": {
         "subscription": {
-            "id": randString(),
+            "id": "test_"+randString(),
             "type": "channel.subscription.message"
         },
         "event": {
@@ -97,9 +102,99 @@ test_payloads = {
             "duration_months": 6
         }
     },
-    "channel.goal.progress": {},
-    "channel.hype_train.progress": {},
-    "channel.hype_train.end": {}
+       "channel.goal.progress": {
+        "subscription": {
+            "id": "test_"+randString(),
+            "type": "channel.goal.progress"
+        },
+        "event": {
+            "id": "1234",
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cooler_user",
+            "broadcaster_user_name": "Cooler_User",
+            "type": "follower",
+            "description": "Follow Goal",
+            "current_amount": 7,
+            "target_amount": 10,
+            "started_at": datetime.now(timezone.utc).isoformat(),
+            "ended_at": None
+        }
+    },
+    
+    "channel.hype_train.progress": {
+        "subscription": {
+            "id": "test_"+randString(),
+            "type": "channel.hype_train.progress"
+        },
+        "event": {
+            "id": "1234",
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cooler_user",
+            "broadcaster_user_name": "Cooler_User",
+            "level": 2,
+            "total": 137,
+            "progress": 37,
+            "goal": 100,
+            "top_contributions": [
+                {
+                    "user_id": "123",
+                    "user_login": "cool_user",
+                    "user_name": "Cool_User",
+                    "type": "bits",
+                    "total": 50
+                },
+                {
+                    "user_id": "456",
+                    "user_login": "cooler_user2",
+                    "user_name": "Cooler_User2",
+                    "type": "subscription",
+                    "total": 30
+                }
+            ],
+            "last_contribution": {
+                "user_id": "123",
+                "user_login": "cool_user",
+                "user_name": "Cool_User",
+                "type": "bits",
+                "total": 50
+            },
+            "started_at": (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(),
+            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat()
+        }
+    },
+    "channel.hype_train.end": {
+        "subscription": {
+            "id": "test_"+randString(),
+            "type": "channel.hype_train.end"
+        },
+        "event": {
+            "id": "1234",
+            "broadcaster_user_id": "1337",
+            "broadcaster_user_login": "cooler_user",
+            "broadcaster_user_name": "Cooler_User",
+            "level": 3,
+            "total": 437,
+            "top_contributions": [
+                {
+                    "user_id": "123",
+                    "user_login": "cool_user",
+                    "user_name": "Cool_User",
+                    "type": "bits",
+                    "total": 200
+                },
+                {
+                    "user_id": "456",
+                    "user_login": "cooler_user2",
+                    "user_name": "Cooler_User2",
+                    "type": "subscription",
+                    "total": 100
+                }
+            ],
+            "started_at": (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(),
+            "ended_at": datetime.now(timezone.utc).isoformat(),
+            "cooldown_ends_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        }
+    }
 }
 
 def test_meta_data():
@@ -122,3 +217,115 @@ async def inject_custom_twitchws_message(ws, message):
     if isinstance(message, dict):
         message = json.dumps(message)
     await ws.handle_message(message)
+
+
+class Tester(CommandBot):
+    async def start(self, hold=True):
+        self.is_running = True
+        self.ws = TwitchWS(bot=self, creds=self.http_config, **self.ws_config, storage=self.storage, static_dirs=self.static_dirs)
+        self.http = self.ws.http
+        self.app = self.ws.http.server
+        self.storage = self.ws.storage
+        self.register_routes()
+        self._register_test_routes()
+        if self.alert_objs:
+            for key, value in self.alert_objs.items():
+                self.add_alert_class(key, value)
+        # start OAuth, websocket connection, and queue
+        self._tasks = await self.ws.run(login_browser=self.login_browser)
+        await self.after_login()
+        if hold:
+            await self.hold()
+        
+    def _register_test_routes(self):
+        @self.app.route('/testui')
+        async def testui(request):
+            async with aiofiles.open('templates/testui.html', 'r', encoding='utf-8') as f:
+                template = await f.read()
+                return web.Response(text=template, content_type='text/html', charset='utf-8')
+                
+        @self.app.route("/testcheer/{amount}/{anon}")
+        async def testcheer(request):
+            payload = test_payloads["channel.cheer"]
+            payload["event"]["bits"] = int(request.match_info['amount'])
+            payload["event"]["is_anonymous"] = False if request.match_info['anon'] == 'False' else True
+            await inject_custom_twitchws_message(
+                self.ws, 
+                {"metadata": test_meta_data(), "payload": payload}
+            )
+            return web.json_response({"status": True})
+        
+        @self.app.route("/testsub/{tier}/{gifted}")
+        async def testsub(request):
+            payload = test_payloads["channel.subscribe"]
+            payload["event"]["tier"] = request.match_info['tier'],
+            payload["event"]["is_gift"] = False if request.match_info['gifted'] == 'False' else True
+            await inject_custom_twitchws_message(
+                self.ws, 
+                {"metadata": test_meta_data(), "payload": payload}
+            )
+            return web.json_response({"status": True})
+
+
+        @self.app.route("/testsubgift/{amount}/{tier}/{anon}")
+        async def testsubgift(request):
+            payload = test_payloads["channel.subscription.gift"]
+            payload["event"]["total"] = int(request.match_info['amount']),
+            payload["event"]["tier"] = request.match_info['tier'],
+            payload["event"]["is_anonymous"] = False if request.match_info['anon'] == 'False' else True
+            await inject_custom_twitchws_message(
+                self.ws, 
+                {"metadata": test_meta_data(), "payload": payload}
+            )
+            return web.json_response({"status": True})
+
+        @self.app.route("/testsubmessage/{months}/{tier}/{streak}/{duration}")
+        async def testsubmessage(request):
+            payload = test_payloads["channel.subscription.message"]
+            payload["event"]["tier"] = request.match_info['tier'],
+            payload["event"]["cumulative_months"] = int(request.match_info['months']),
+            payload["event"]["streak_months"] = int(request.match_info['streak']),
+            payload["event"]["duration_months"] = int(request.match_info['duration'])
+            await inject_custom_twitchws_message(
+                self.ws, 
+                {"metadata": test_meta_data(), "payload": payload}
+            )
+            return web.json_response({"status": True})
+
+        @self.app.route("/testgoal/{type}/{current}/{target}")
+        async def testgoal(request):
+            payload = test_payloads["channel.goal.progress"]
+            payload["event"]["type"] = request.match_info['type']
+            payload["event"]["current_amount"] = int(request.match_info['current'])
+            payload["event"]["target_amount"] = int(request.match_info['target'])
+            await inject_custom_twitchws_message(
+                self.ws, 
+                {"metadata": test_meta_data(), "payload": payload}
+            )
+            return web.json_response({"status": True})
+
+        @self.app.route("/testhypetrain/{level}/{total}/{progress}")
+        async def testhypetrain(request):
+            payload = test_payloads["channel.hype_train.progress"]
+            payload["event"]["level"] = int(request.match_info['level'])
+            payload["event"]["total"] = int(request.match_info['total'])
+            payload["event"]["progress"] = int(request.match_info['progress'])
+            payload["event"]["goal"] = 100 * int(request.match_info['level']) #Goal increases with level
+            await inject_custom_twitchws_message(
+                self.ws, 
+                {"metadata": test_meta_data(), "payload": payload}
+            )
+            return web.json_response({"status": True})
+
+        @self.app.route("/testhypetrainend/{level}/{total}")
+        async def testhypetrainend(request):
+            payload = test_payloads["channel.hype_train.end"]
+            payload["event"]["level"] = int(request.match_info['level'])
+            payload["event"]["total"] = int(request.match_info['total'])
+            await inject_custom_twitchws_message(
+                self.ws, 
+                {"metadata": test_meta_data(), "payload": payload}
+            )
+            return web.json_response({"status": True})
+
+        logger.info(f"[_register_test_routes]: Done")
