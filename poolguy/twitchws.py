@@ -244,6 +244,7 @@ class AlertQueue:
                     timestamp=alert_data['timestamp']
                 )
                 await alert.process()
+                await asyncio.sleep(1)
             except asyncio.CancelledError:
                 break
             except Exception as e:
