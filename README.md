@@ -124,3 +124,4 @@ if __name__ == '__main__':
     asyncio.run(bot.start())
     
 ```
+More fleshed out example: https://github.com/s4w3d0ff/deezbot
