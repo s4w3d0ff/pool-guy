@@ -36,6 +36,15 @@ class TwitchBot:
     
     async def start(self, hold=True):
         self.is_running = True
+        self._setup()
+        await self.before_login()
+        # start OAuth, websocket connection, and queue
+        self._tasks = await self.ws.run(login_browser=self.login_browser)
+        await self.after_login()
+        if hold:
+            await self.hold()
+    
+    def _setup(self):
         self.ws = TwitchWS(bot=self, creds=self.http_config, **self.ws_config, storage=self.storage, static_dirs=self.static_dirs)
         self.http = self.ws.http
         self.app = self.ws.http.server
@@ -44,11 +53,6 @@ class TwitchBot:
         if self.alert_objs:
             for key, value in self.alert_objs.items():
                 self.add_alert_class(key, value)
-        # start OAuth, websocket connection, and queue
-        self._tasks = await self.ws.run(self.login_browser)
-        await self.after_login()
-        if hold:
-            await self.hold()
 
     async def shutdown(self, reset=True):
         """Gracefully shutdown the bot"""
@@ -88,9 +92,12 @@ class TwitchBot:
             else:
                 logger.error(f"Max retry attempts ({self.max_retries}) reached. Shutting down permanently.")
 
-
+    async def before_login(self):
+        """Use to execute logic before login"""
+        pass
+        
     async def after_login(self):
-        """Use to execute logic after everything is setup and right before we 'self.hold' """
+        """Use to execute logic after everything is setup and right before we 'self.hold'"""
         pass
         
     def register_routes(self):

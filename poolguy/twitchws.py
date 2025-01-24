@@ -40,6 +40,7 @@ class TwitchWS:
     async def socket_loop(self):
         self.socket = await websockets.connect(websocketURL)
         self.connected = True
+        self._disconnect_event.clear()
         logger.debug(f"[socket_loop] started...")
         while self.connected:
             try:
@@ -244,7 +245,6 @@ class AlertQueue:
                     timestamp=alert_data['timestamp']
                 )
                 await alert.process()
-                await asyncio.sleep(1)
             except asyncio.CancelledError:
                 break
             except Exception as e:
