@@ -110,53 +110,192 @@ class JSONStorage(BaseStorage):
         
 #==================================================================
 #==================================================================
-
 class MongoDBStorage(BaseStorage):
-    def __init__(self, db_name='twitch_db', collection_name='alerts'):
+    def __init__(self, db_name='twitch_db', collection_name='alerts', token_collection='tokens', uri='mongodb://localhost:27017/'):
         try:
             from pymongo import MongoClient
+            # Initialize MongoDB connection
+            self.client = MongoClient(uri)
+            self.db = self.client[db_name]
+            self.alerts = self.db[collection_name]
+            self.tokens = self.db[token_collection]
+            # Create indexes for better query performance
+            self.alerts.create_index([("date", 1)])
+            self.alerts.create_index([("alert_id", 1)])
         except ImportError:
             raise ImportError("pymongo is not installed. Please install it to use MongoDBStorage.")
+        except Exception as e:
+            logger.error(f"Failed to initialize MongoDB connection: {str(e)}")
+            raise
         
     async def clean_up(self):
-        pass
+        """Remove alerts older than max_days"""
+        try:
+            cutoff_date = datetime.utcnow() - timedelta(days=30*3)  # Default to 90 days
+            result = await self.alerts.delete_many({"date": {"$lt": cutoff_date}})
+            logger.info(f"Cleaned up {result.deleted_count} old alerts")
+            return result.deleted_count
+        except Exception as e:
+            logger.error(f"Error during cleanup: {str(e)}")
+            raise
         
     async def save_alert(self, alert_id, alert_data):
-        pass
+        """Save alert to MongoDB"""
+        try:
+            alert_doc = {
+                "alert_id": str(alert_id),
+                "data": alert_data,
+                "date": datetime.utcnow().date()
+            }
+            await self.alerts.update_one(
+                {"alert_id": str(alert_id)},
+                {"$set": alert_doc},
+                upsert=True
+            )
+        except Exception as e:
+            logger.error(f"Error saving alert: {str(e)}")
+            raise
 
     async def load_alerts(self, date):
-        pass
+        """Load alerts for specific date"""
+        try:
+            cursor = self.alerts.find(
+                {"date": datetime.strptime(str(date), '%Y-%m-%d').date()},
+                {"_id": 0, "alert_id": 1, "data": 1}
+            )
+            alerts = {doc["alert_id"]: doc["data"] async for doc in cursor}
+            if not alerts:
+                raise FileNotFoundError(f"No alerts found for date {date}")
+            return alerts
+        except Exception as e:
+            logger.error(f"Error loading alerts: {str(e)}")
+            raise
 
     async def save_token(self, token):
-        pass
+        """Save OAuth token"""
+        try:
+            await self.tokens.update_one(
+                {"type": "oauth_token"},
+                {"$set": {"token": token, "updated_at": datetime.utcnow()}},
+                upsert=True
+            )
+        except Exception as e:
+            logger.error(f"Error saving token: {str(e)}")
+            raise
 
     async def load_token(self):
-        pass
-        
-#==================================================================
-#==================================================================
+        """Load OAuth token"""
+        try:
+            token_doc = await self.tokens.find_one({"type": "oauth_token"})
+            return token_doc["token"] if token_doc else None
+        except Exception as e:
+            logger.error(f"Error loading token: {str(e)}")
+            raise
 
 class SQLiteStorage(BaseStorage):
     def __init__(self, db_name='twitch_alerts.db'):
         try:
             import sqlite3
+            import aiosqlite
+            self.db_name = db_name
+            # Initialize database and create tables
+            self._create_tables()
         except ImportError:
             raise ImportError("sqlite3 is not installed. Please ensure it is available in your Python environment.")
 
+    def _create_tables(self):
+        """Create necessary tables if they don't exist"""
+        with sqlite3.connect(self.db_name) as conn:
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS alerts (
+                    alert_id TEXT PRIMARY KEY,
+                    alert_data TEXT,
+                    alert_date TEXT
+                )
+            ''')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS tokens (
+                    token_type TEXT PRIMARY KEY,
+                    token_data TEXT,
+                    updated_at TIMESTAMP
+                )
+            ''')
+            conn.execute('CREATE INDEX IF NOT EXISTS idx_alert_date ON alerts(alert_date)')
+
     async def clean_up(self):
-        pass
+        """Remove alerts older than 90 days"""
+        try:
+            cutoff_date = (datetime.utcnow() - timedelta(days=90)).date().isoformat()
+            async with aiosqlite.connect(self.db_name) as db:
+                cursor = await db.execute(
+                    "DELETE FROM alerts WHERE alert_date < ?",
+                    (cutoff_date,)
+                )
+                await db.commit()
+                deleted_count = cursor.rowcount
+                logger.info(f"Cleaned up {deleted_count} old alerts")
+                return deleted_count
+        except Exception as e:
+            logger.error(f"Error during cleanup: {str(e)}")
+            raise
         
     async def save_alert(self, alert_id, alert_data):
-        pass
+        """Save alert to SQLite database"""
+        try:
+            async with aiosqlite.connect(self.db_name) as db:
+                await db.execute(
+                    "INSERT OR REPLACE INTO alerts (alert_id, alert_data, alert_date) VALUES (?, ?, ?)",
+                    (str(alert_id), json.dumps(alert_data), datetime.utcnow().date().isoformat())
+                )
+                await db.commit()
+        except Exception as e:
+            logger.error(f"Error saving alert: {str(e)}")
+            raise
 
     async def load_alerts(self, date):
-        pass
+        """Load alerts for specific date"""
+        try:
+            async with aiosqlite.connect(self.db_name) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute(
+                    "SELECT alert_id, alert_data FROM alerts WHERE alert_date = ?",
+                    (str(date),)
+                )
+                rows = await cursor.fetchall()
+                if not rows:
+                    raise FileNotFoundError(f"No alerts found for date {date}")
+                return {row['alert_id']: json.loads(row['alert_data']) for row in rows}
+        except Exception as e:
+            logger.error(f"Error loading alerts: {str(e)}")
+            raise
 
     async def save_token(self, token):
-        pass
+        """Save OAuth token"""
+        try:
+            async with aiosqlite.connect(self.db_name) as db:
+                await db.execute(
+                    "INSERT OR REPLACE INTO tokens (token_type, token_data, updated_at) VALUES (?, ?, ?)",
+                    ('oauth_token', json.dumps(token), datetime.utcnow().isoformat())
+                )
+                await db.commit()
+        except Exception as e:
+            logger.error(f"Error saving token: {str(e)}")
+            raise
 
     async def load_token(self):
-        pass
+        """Load OAuth token"""
+        try:
+            async with aiosqlite.connect(self.db_name) as db:
+                db.row_factory = aiosqlite.Row
+                cursor = await db.execute(
+                    "SELECT token_data FROM tokens WHERE token_type = ?",
+                    ('oauth_token',)
+                )
+                row = await cursor.fetchone()
+                return json.loads(row['token_data']) if row else None
+        except Exception as e:
+            logger.error(f"Error loading token: {str(e)}")
+            raise
 
 #==================================================================
 #==================================================================

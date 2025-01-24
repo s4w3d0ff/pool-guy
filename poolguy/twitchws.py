@@ -40,6 +40,7 @@ class TwitchWS:
     async def socket_loop(self):
         self.socket = await websockets.connect(websocketURL)
         self.connected = True
+        self._disconnect_event.clear()
         logger.debug(f"[socket_loop] started...")
         while self.connected:
             try:

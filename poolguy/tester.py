@@ -102,7 +102,7 @@ test_payloads = {
             "duration_months": 6
         }
     },
-       "channel.goal.progress": {
+    "channel.goal.progress": {
         "subscription": {
             "id": "test_"+randString(),
             "type": "channel.goal.progress"
@@ -120,7 +120,6 @@ test_payloads = {
             "ended_at": None
         }
     },
-    
     "channel.hype_train.progress": {
         "subscription": {
             "id": "test_"+randString(),
@@ -194,6 +193,66 @@ test_payloads = {
             "ended_at": datetime.now(timezone.utc).isoformat(),
             "cooldown_ends_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
         }
+    },
+    "channel.chat.notification": {
+        "subscription": {
+            "id": "test_"+randString(),
+            "type": "channel.chat.notification"
+        },
+        "event": {
+            "broadcaster_user_id": "1971641",
+            "broadcaster_user_login": "streamer",
+            "broadcaster_user_name": "streamer",
+            "chatter_user_id": "49912639",
+            "chatter_user_login": "viewer23",
+            "chatter_user_name": "viewer23",
+            "chatter_is_anonymous": False,
+            "color": "",
+            "badges": [],
+            "system_message": "viewer23 subscribed at Tier 1. They've subscribed for 10 months!",
+            "message_id": "test_"+randString(),
+            "message": {
+                "text": "",
+                "fragments": []
+            },
+            "notice_type": "resub",
+            "sub": None,
+            "resub": {
+                "cumulative_months": 10,
+                "duration_months": 0,
+                "streak_months": None,
+                "sub_plan": "1000",
+                "is_gift": False,
+                "gifter_is_anonymous": None,
+                "gifter_user_id": None,
+                "gifter_user_name": None,
+                "gifter_user_login": None
+            },
+            "sub_gift": None,
+            "community_sub_gift": None,
+            "gift_paid_upgrade": None,
+            "prime_paid_upgrade": None,
+            "pay_it_forward": None,
+            "raid": None,
+            "unraid": None,
+            "announcement": None,
+            "bits_badge_tier": None,
+            "charity_donation": None,
+            "shared_chat_sub": None,
+            "shared_chat_resub": None,
+            "shared_chat_sub_gift": None,
+            "shared_chat_community_sub_gift": None,
+            "shared_chat_gift_paid_upgrade": None,
+            "shared_chat_prime_paid_upgrade": None,
+            "shared_chat_pay_it_forward": None,
+            "shared_chat_raid": None,
+            "shared_chat_announcement": None,
+            "source_broadcaster_user_id": None,
+            "source_broadcaster_user_login": None,
+            "source_broadcaster_user_name": None,
+            "source_message_id": None,
+            "source_badges": None
+        }
     }
 }
 
@@ -220,23 +279,9 @@ async def inject_custom_twitchws_message(ws, message):
 
 
 class Tester(CommandBot):
-    async def start(self, hold=True):
-        self.is_running = True
-        self.ws = TwitchWS(bot=self, creds=self.http_config, **self.ws_config, storage=self.storage, static_dirs=self.static_dirs)
-        self.http = self.ws.http
-        self.app = self.ws.http.server
-        self.storage = self.ws.storage
-        self.register_routes()
+    async def before_login(self):
         self._register_test_routes()
-        if self.alert_objs:
-            for key, value in self.alert_objs.items():
-                self.add_alert_class(key, value)
-        # start OAuth, websocket connection, and queue
-        self._tasks = await self.ws.run(login_browser=self.login_browser)
-        await self.after_login()
-        if hold:
-            await self.hold()
-        
+    
     def _register_test_routes(self):
         @self.app.route('/testui')
         async def testui(request):
@@ -322,6 +367,15 @@ class Tester(CommandBot):
             payload = test_payloads["channel.hype_train.end"]
             payload["event"]["level"] = int(request.match_info['level'])
             payload["event"]["total"] = int(request.match_info['total'])
+            await inject_custom_twitchws_message(
+                self.ws, 
+                {"metadata": test_meta_data(), "payload": payload}
+            )
+            return web.json_response({"status": True})
+
+        @self.app.route("/testchatnoto")
+        async def testchatnoto(request):
+            payload = test_payloads["channel.chat.notification"]
             await inject_custom_twitchws_message(
                 self.ws, 
                 {"metadata": test_meta_data(), "payload": payload}
