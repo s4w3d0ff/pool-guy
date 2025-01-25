@@ -6,7 +6,7 @@ setup(
     author="s4w3d0ff",
     author_email="",
     description="A Twitch bot framework with event subscription and alert handling capabilities",
-    long_description=open("README.md").read() if open("README.md") else "",
+    long_description=open("README.md", encoding="utf-8").read() if open("README.md", encoding="utf-8") else "",
     long_description_content_type="text/markdown",
     url="https://github.com/s4w3d0ff/pool-guy",
     packages=find_packages(),
