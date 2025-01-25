@@ -71,7 +71,7 @@ class RequestHandler:
         try:
             self.login_info = await self.validate_auth()
         except Exception as e:
-                logger.error(f'Token Validation failed! [{e}]')
+            logger.error(f'Token Validation failed! [{e}]')
             await self.start_oauth_flow(browser)
             self.login_info = await self.validate_auth()
         if server_route_len <= 1 and self.server.is_running():
@@ -79,7 +79,7 @@ class RequestHandler:
             await self.server.stop()
         # login success
         self.user_id = self.login_info['user_id']
-        logger.debug(f'Logged in as: {self.login_info['login']}({self.user_id})')
+        logger.debug(f"Logged in as: {self.login_info['login']}({self.user_id})")
         return self.login_info
 
     async def start_oauth_flow(self, browser=None):
