@@ -57,30 +57,29 @@ class RequestHandler:
         server_route_len = len(self.server.routes)+len(self.server.ws_handlers)+len(self.server.static_dirs)
         if server_route_len > 1 and not self.server.is_running():
             await self.server.start()
+        self.token = self.token or await self.storage.load_token()
+        if self.token:
+            try:
+                self.login_info = await self.validate_auth()
+            except Exception as e:
+                logger.error(f'Token Validation failed! [{e}]')
+                self.token = None
         if not self.token:
-            # try to load token from storage
-            self.token = await self.storage.load_token()
-        if not self.token:
-            # still no token, get a new one
             if not self.server.is_running():
-                # make sure we have the webserver running
                 await self.server.start()
-            # get new token
             await self.start_oauth_flow(browser)
         try:
-            # validate token
             self.login_info = await self.validate_auth()
-        except:
-            # validation failed, get a new token
+        except Exception as e:
+                logger.error(f'Token Validation failed! [{e}]')
             await self.start_oauth_flow(browser)
-            # validate token
             self.login_info = await self.validate_auth()
         if server_route_len <= 1 and self.server.is_running():
-            logger.warning(f'No routes or static dirs found')
+            logger.warning(f'No extra routes or static dirs found. Shutting down webserver.')
             await self.server.stop()
         # login success
         self.user_id = self.login_info['user_id']
-        logger.debug(f'Logged in as: \n{json.dumps(self.login_info, indent=2)}')
+        logger.debug(f'Logged in as: {self.login_info['login']}({self.user_id})')
         return self.login_info
 
     async def start_oauth_flow(self, browser=None):
