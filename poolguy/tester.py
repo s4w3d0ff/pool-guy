@@ -303,7 +303,7 @@ class Tester(CommandBot):
         @self.app.route("/testsub/{tier}/{gifted}")
         async def testsub(request):
             payload = test_payloads["channel.subscribe"]
-            payload["event"]["tier"] = request.match_info['tier'][0],
+            payload["event"]["tier"] = request.match_info['tier']
             payload["event"]["is_gift"] = False if request.match_info['gifted'] == 'False' else True
             await inject_custom_twitchws_message(
                 self.ws, 
