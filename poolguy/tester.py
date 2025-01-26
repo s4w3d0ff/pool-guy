@@ -303,7 +303,7 @@ class Tester(CommandBot):
         @self.app.route("/testsub/{tier}/{gifted}")
         async def testsub(request):
             payload = test_payloads["channel.subscribe"]
-            payload["event"]["tier"] = request.match_info['tier'],
+            payload["event"]["tier"] = request.match_info['tier']
             payload["event"]["is_gift"] = False if request.match_info['gifted'] == 'False' else True
             await inject_custom_twitchws_message(
                 self.ws, 
@@ -315,8 +315,8 @@ class Tester(CommandBot):
         @self.app.route("/testsubgift/{amount}/{tier}/{anon}")
         async def testsubgift(request):
             payload = test_payloads["channel.subscription.gift"]
-            payload["event"]["total"] = int(request.match_info['amount']),
-            payload["event"]["tier"] = request.match_info['tier'],
+            payload["event"]["total"] = int(request.match_info['amount'])
+            payload["event"]["tier"] = request.match_info['tier']
             payload["event"]["is_anonymous"] = False if request.match_info['anon'] == 'False' else True
             await inject_custom_twitchws_message(
                 self.ws, 
@@ -327,9 +327,9 @@ class Tester(CommandBot):
         @self.app.route("/testsubmessage/{months}/{tier}/{streak}/{duration}")
         async def testsubmessage(request):
             payload = test_payloads["channel.subscription.message"]
-            payload["event"]["tier"] = request.match_info['tier'],
-            payload["event"]["cumulative_months"] = int(request.match_info['months']),
-            payload["event"]["streak_months"] = int(request.match_info['streak']),
+            payload["event"]["tier"] = request.match_info['tier']
+            payload["event"]["cumulative_months"] = int(request.match_info['months'])
+            payload["event"]["streak_months"] = int(request.match_info['streak'])
             payload["event"]["duration_months"] = int(request.match_info['duration'])
             await inject_custom_twitchws_message(
                 self.ws, 
