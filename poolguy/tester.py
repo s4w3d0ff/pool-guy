@@ -36,7 +36,7 @@ test_payloads = {
             "broadcaster_user_id": "1337",
             "broadcaster_user_login": "cooler_user",
             "broadcaster_user_name": "Cooler_User",
-            "message": "pogchamp",
+            "message": "pogchamp woot woot awooga",
             "bits": 1000
         }
     },
