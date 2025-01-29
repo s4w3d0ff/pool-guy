@@ -65,12 +65,14 @@ class TwitchWS:
         except:
             pass
         # stop webserver app
-        logger.warning(f"[close] stopping webserver...")
-        await self.http.server.stop()
+        try:
+            logger.warning(f"[close] stopping webserver...")
+            await self.http.server.stop()
+        except Exception as e:
+            logger.error(f"{e}")
         # stop queue
         logger.warning(f"[close] stopping alert_queue...")
         self.alert_queue.is_running = False
-        logger.warning(f"[close] awaiting _queue_task...")
         # TODO: add a way to save anything left in the queue during shutdown
         
     async def after_init_welcome(self):
