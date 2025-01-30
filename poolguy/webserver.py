@@ -23,12 +23,13 @@ class WebServer:
     def add_static_dirs(self):
         if self.is_running():
             logger.warning("Adding a static dir after server started - requires restart to take effect")
-            
         for dir in self.static_dirs:
-            s_dir = os.path.join(self.base_dir, dir)
-            os.makedirs(s_dir, exist_ok=True)
-            self.app.router.add_static(f'/{dir}/', s_dir)
-            logger.info(f"Added static dir '/{dir}/': {s_dir}")
+            # Create a single static root directory
+            static_root = os.path.join(self.base_dir, dir)
+            os.makedirs(static_root, exist_ok=True)
+            # Add the main static routes
+            self.app.router.add_static(f'/{dir}/', static_root)
+            logger.info(f"Added static dir '/{dir}/': {static_root}")
 
     def add_route(self, path, handler, method='GET', **kwargs):
         """Add a new route to the application."""
