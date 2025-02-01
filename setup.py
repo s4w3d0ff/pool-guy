@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="pool-guy",
+    name="poolguy",
     version="0.1.2",
     author="s4w3d0ff",
     author_email="",
