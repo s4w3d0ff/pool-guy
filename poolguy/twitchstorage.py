@@ -14,11 +14,11 @@ class BaseStorage(ABC):
         pass
         
     @abstractmethod
-    async def save_token(self, token):
+    async def save_token(self, token, name):
         pass
         
     @abstractmethod
-    async def load_token(self):
+    async def load_token(self, name):
         pass
 
 #==================================================================
@@ -31,10 +31,10 @@ class FakeStorage(BaseStorage):
     async def load_alerts(self, date):
         logger.error(f"[FakeStorage] Fake load_alerts triggered!")
 
-    async def save_token(self, token):
+    async def save_token(self, token, name):
         logger.error(f"[FakeStorage] Fake save_token triggered!")
 
-    async def load_token(self):
+    async def load_token(self, name):
         logger.error(f"[FakeStorage] Fake load_token triggered!")
 
     async def clean_up(self):
@@ -48,16 +48,16 @@ class JSONStorage(BaseStorage):
         self.storage_dir = storage_dir
         self.max_days = max_days
 
-    async def save_token(self, token):
+    async def save_token(self, token, name=''):
         """ Saves OAuth token to database"""
-        file_path = os.path.join(self.storage_dir, "token.json")
+        file_path = os.path.join(self.storage_dir, name+"_token.json")
         await aioSaveJSON(token, file_path)
 
-    async def load_token(self):
+    async def load_token(self, name=''):
         """ Gets saved OAuth token from database"""
-        file_path = os.path.join(self.storage_dir, "token.json")
+        file_path = os.path.join(self.storage_dir, name+"_token.json")
         if not os.path.exists(file_path):
-            logger.warning(f"No token.json found")
+            logger.warning(f"No token at: {file_path}")
             return None
         return await aioLoadJSON(file_path)
 

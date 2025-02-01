@@ -64,7 +64,7 @@ class TwitchBot:
         # Clear all tasks
         logger.warning("Clearing tasks...")
         for task in self._tasks:
-            if not task.done():
+            if task and not task.done():
                 task.cancel()
         self._tasks.clear()
         logger.warning("TwitchBot shutdown complete")
