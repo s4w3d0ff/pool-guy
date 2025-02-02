@@ -15,7 +15,6 @@ class WebServer:
         self.routes = {}
         self.ws_handlers = {}
         self.static_dirs = static_dirs
-        self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
     def is_running(self):
         return True if self._app_task else False
@@ -23,9 +22,9 @@ class WebServer:
     def add_static_dirs(self):
         if self.is_running():
             logger.warning("Adding a static dir after server started - requires restart to take effect")
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         for dir in self.static_dirs:
-            # Create a single static root directory
-            static_root = os.path.join(self.base_dir, dir)
+            static_root = os.path.join(base_dir, dir)
             os.makedirs(static_root, exist_ok=True)
             # Add the main static routes
             self.app.router.add_static(f'/{dir}/', static_root)
