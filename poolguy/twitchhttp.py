@@ -47,7 +47,7 @@ class RequestHandler:
             async with session.post(tokenEndpoint, data=data, headers=heads) as response:
                 response.raise_for_status()
                 self.token = await response.json()
-                await self.storage.save_token(self.token)
+                await self.storage.save_token(self.token, "twitch")
                 logger.info("Access token obtained and stored.")
                 self._token_event.set()
         return web.Response(text=closeBrowser, content_type='text/html', charset='utf-8')
@@ -57,7 +57,7 @@ class RequestHandler:
         server_route_len = len(self.server.routes)+len(self.server.ws_handlers)+len(self.server.static_dirs)
         if server_route_len > 1 and not self.server.is_running():
             await self.server.start()
-        self.token = self.token or await self.storage.load_token()
+        self.token = self.token or await self.storage.load_token("twitch")
         if self.token:
             try:
                 self.login_info = await self.validate_auth()
@@ -133,7 +133,7 @@ class RequestHandler:
             async with session.post(tokenEndpoint, data=data, headers=heads) as response:
                 response.raise_for_status()
                 self.token = await response.json()
-                await self.storage.save_token(self.token)
+                await self.storage.save_token(self.token, "twitch")
                 self.login_info = await self.validate_auth()
                 self.user_id = self.login_info['user_id']
                 logger.warning("OAuth token refreshed.")
