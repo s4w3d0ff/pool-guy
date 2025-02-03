@@ -381,5 +381,3 @@ class Tester(CommandBot):
                 {"metadata": test_meta_data(), "payload": payload}
             )
             return web.json_response({"status": True})
-
-        logger.info(f"[_register_test_routes]: Done")
