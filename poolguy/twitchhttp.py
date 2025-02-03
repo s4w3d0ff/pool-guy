@@ -11,7 +11,7 @@ oauthEndpoint = "https://id.twitch.tv/oauth2/authorize"
 validateEndoint = "https://id.twitch.tv/oauth2/validate"
 
 class RequestHandler:
-    def __init__(self, client_id, client_secret, redirect_uri, scopes, storage=None, storage_type='json', static_dirs=[]):
+    def __init__(self, client_id, client_secret, redirect_uri, scopes, storage=None, storage_type='json', static_dirs=[], base_dir=None):
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
@@ -24,8 +24,9 @@ class RequestHandler:
         self.storage = storage or StorageFactory.create_storage(storage_type=storage_type)
         # Webserver setup
         self.static_dirs = static_dirs
+        self.base_dir = base_dir
         parsed_uri = urlparse(self.redirect_uri)
-        self.server = WebServer(parsed_uri.hostname, parsed_uri.port, self.static_dirs)
+        self.server = WebServer(parsed_uri.hostname, parsed_uri.port, self.static_dirs, self.base_dir)
         callback_path = parsed_uri.path.lstrip('/')
         self.server.add_route(f'/{callback_path}', self.callback_handler)
 
