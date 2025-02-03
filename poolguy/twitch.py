@@ -5,7 +5,7 @@ from .twitchws import Alert, TwitchWS
 logger = ColorLogger(__name__)
 
 class TwitchBot:
-    def __init__(self, http_config={}, ws_config={}, alert_objs={}, max_retries=3, retry_delay=30, login_browser=None, storage=None, static_dirs=[]):
+    def __init__(self, http_config={}, ws_config={}, alert_objs={}, max_retries=3, retry_delay=30, login_browser=None, storage=None, static_dirs=[], base_dir=None):
         self.http_config = http_config
         self.ws_config = ws_config
         self.alert_objs = alert_objs
@@ -16,6 +16,7 @@ class TwitchBot:
         self._tasks = []
         self.commands = {}
         self.static_dirs = static_dirs
+        self.base_dir = base_dir
         self.retry_count = 0
         self.is_running = False
         self.max_retries = max_retries
@@ -45,7 +46,7 @@ class TwitchBot:
             await self.hold()
     
     def _setup(self):
-        self.ws = TwitchWS(bot=self, creds=self.http_config, **self.ws_config, storage=self.storage, static_dirs=self.static_dirs)
+        self.ws = TwitchWS(bot=self, creds=self.http_config, **self.ws_config, storage=self.storage, static_dirs=self.static_dirs, base_dir=self.base_dir)
         self.http = self.ws.http
         self.app = self.ws.http.server
         self.storage = self.ws.storage
