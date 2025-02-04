@@ -1,6 +1,6 @@
 from .utils import json, os, aiohttp, re, asyncio
 from .utils import ColorLogger, aioLoadJSON, aioSaveJSON, urlencode
-from .twitchhttp import RequestHandler
+from .http import RequestHandler
 
 logger = ColorLogger(__name__)
 

@@ -40,13 +40,13 @@ class TwitchBot:
         self._setup()
         await self.before_login()
         # start OAuth, websocket connection, and queue
-        self._tasks = await self.ws.run(login_browser=self.login_browser)
+        self._tasks = await self.ws.run()
         await self.after_login()
         if hold:
             await self.hold()
     
     def _setup(self):
-        self.ws = TwitchWS(bot=self, creds=self.http_config, **self.ws_config, storage=self.storage, static_dirs=self.static_dirs, base_dir=self.base_dir)
+        self.ws = TwitchWS(bot=self, creds=self.http_config, **self.ws_config, storage=self.storage, static_dirs=self.static_dirs, base_dir=self.base_dir, browser=self.login_browser)
         self.http = self.ws.http
         self.app = self.ws.http.server
         self.storage = self.ws.storage

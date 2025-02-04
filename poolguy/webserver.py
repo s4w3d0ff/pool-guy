@@ -1,6 +1,5 @@
 from .utils import asyncio, os, aiohttp
-from .utils import ColorLogger, urlparse, wraps
-from aiohttp import web
+from .utils import ColorLogger, urlparse, wraps, web
 
 logger = ColorLogger(__name__)
 
@@ -19,6 +18,9 @@ class WebServer:
     
     def is_running(self):
         return True if self._app_task else False
+
+    def route_len(self):
+        return len(self.routes)+len(self.ws_handlers)+len(self.static_dirs)
 
     def add_static_dirs(self):
         if self.is_running():
@@ -66,7 +68,7 @@ class WebServer:
             try:
                 await handler(ws, request)
             except Exception as e:
-                logger.warning(f"{path} handler error: {e} {request=}")
+                logger.error(f"{path} WebSocket handler error: {e}")
             finally:
                 return ws
 

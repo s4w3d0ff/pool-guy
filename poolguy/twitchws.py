@@ -1,7 +1,7 @@
 from .utils import json, asyncio, websockets
 from .utils import MaxSizeDict, ColorLogger, ABC
 from .utils import convert2epoch, abstractmethod
-from .twitchstorage import StorageFactory
+from .storage import StorageFactory
 from .twitchapi import TwitchApi
 
 logger = ColorLogger(__name__)
@@ -19,7 +19,7 @@ class TwitchWS:
         self.socket = None
         self.connected = False
         self.session_id = None
-        self.seen_messages = MaxSizeDict(20)
+        self._seen_messages = MaxSizeDict(20)
         self._queue_task = None
         self._socket_task = None
         self._disconnect_event = asyncio.Event()
@@ -28,8 +28,8 @@ class TwitchWS:
         """ Adds alert classes to the AlertFactory cache """
         AlertFactory.register_alert_class(name, obj)
 
-    async def run(self, login_browser=None):
-        await self.http.login(login_browser)
+    async def run(self, token=None):
+        await self.http.login(token)
         logger.info(f"Clearing orphaned event subs")
         await self.http.unsubAllEvents()
         if not self._socket_task:
@@ -121,8 +121,8 @@ class TwitchWS:
         msgid = meta["message_id"]
         timestamp = convert2epoch(meta['message_timestamp'])
         logger.debug(f"{msgtype}:\n{json.dumps(msg, indent=2)}")
-        if meta["message_id"] not in self.seen_messages:
-            self.seen_messages[msgid] = msg
+        if meta["message_id"] not in self._seen_messages:
+            self._seen_messages[msgid] = msg
             match msgtype:
                 case "session_welcome": 
                     await self.handle_session_welcome(meta, msg["payload"])
