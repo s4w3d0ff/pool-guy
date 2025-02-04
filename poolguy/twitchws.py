@@ -74,6 +74,7 @@ class TwitchWS:
         logger.warning(f"[close] stopping alert_queue...")
         self.alert_queue.is_running = False
         # TODO: add a way to save anything left in the queue during shutdown
+        await self.http.token_handler.stop()
         
     async def after_init_welcome(self):
         for chan in self.channels:

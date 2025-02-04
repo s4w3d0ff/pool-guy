@@ -143,6 +143,7 @@ class TokenHandler:
         logger.debug(f"_token_refresher started...")
         while self._running:
             try:
+                logger.info(f'Validating twitch token...')
                 r = await self._validate_auth()
                 self.user_id = r["user_id"]
             except Exception as e:
@@ -156,18 +157,27 @@ class TokenHandler:
                 continue
             await asyncio.sleep(3600)
 
+    async def _run(self):
+        self._refresh_task = None
+        self._refresh_task = asyncio.create_task(self._token_refresher())
+
+    async def stop(self):
+        self._running = False
+        try:
+            await asyncio.wait_for(self._refresh_task, timeout=15)
+        except TimeoutError:
+            logger.warning('The task was cancelled due to a timeout')
+
     async def _login(self, token=None):
         """ Checks storage for saved token, gets new token if one isnt found. Starts the token refresher task """
-        self._token = token
-        self._refresh_task = None
-        if not self._token:
-            logger.debug(f"Attempting to load saved token...")
-            self._token = await self.storage.load_token(name="twitch")
-            if self._token:
-                logger.warning(f"Loaded saved token from storage!")
-            else:
-                self._token = await self._get_new_token()
-        self._refresh_task = asyncio.create_task(self._token_refresher())
+        logger.debug(f"Attempting to load saved token...")
+        self._token = await self.storage.load_token(name="twitch")
+        if self._token:
+            logger.warning(f"Loaded saved token from storage!")
+        else:
+            self._token = await self._get_new_token()
+        if not self._running:
+            await self._run()
 
     async def get_token(self):
         """ Returns current token after checking if the token needs to be refreshed """
