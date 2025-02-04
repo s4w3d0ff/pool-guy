@@ -66,7 +66,7 @@ class WebServer:
             try:
                 await handler(ws, request)
             except Exception as e:
-                logger.error(f"WebSocket handler error: {e}")
+                logger.warning(f"{path} handler error: {e} {request=}")
             finally:
                 return ws
 
