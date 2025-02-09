@@ -147,16 +147,12 @@ class CommandBot(TwitchBot):
                 logger.debug(f"Executed command: {command_name}")
             except Exception as e:
                 logger.error(f"Error executing command {command_name}: {str(e)}")
-                await self.http.sendChatMessage(
-                    f"Failed to execute command: {command_name}", 
-                    broadcaster_id=channel["broadcaster_id"]
-                )
         else:
             logger.debug(f"Unknown command: {command_name}")
 
     @cmd_rate_limit(calls=1, period=30, warn_cooldown=15)
-    async def cmd_help(self, user, channel, args):
-        """Shows available commands. Usage: !help [command]"""
+    async def cmd_commands(self, user, channel, args):
+        """Shows available commands. Usage: !commands [command]"""
         if args:
             # Show help for specific command
             command = args[0].lower()
