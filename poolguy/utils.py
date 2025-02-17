@@ -125,6 +125,7 @@ def randomfile(dir):
     return os.path.join(dir, random.choice(files))
 
 class MaxSizeDict(OrderedDict):
+    """ OrderedDict subclass with a 'max_size' which restricts the len. As items are added, the oldest items are removed to make room. """
     def __init__(self, max_size):
         super().__init__()
         self.max_size = max_size
@@ -139,6 +140,7 @@ class MaxSizeDict(OrderedDict):
 
 
 class ThreadWithReturn(threading.Thread):
+    """ threading.Thread subclass that saves the result of the function and returns the result with Thread.join() """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._return = None
@@ -156,46 +158,3 @@ class ThreadWithReturn(threading.Thread):
         if self._exception:
             raise self._exception
         return self._return
-
-
-def cmd_rate_limit(calls=2, period=10, warn_cooldown=5):
-    """
-    Decorator to rate limit commands per user
-    
-    Args:
-        calls (int): Number of allowed calls
-        period (float): Time period in seconds
-        warn_cooldown (int): Time between warning messages
-        
-    Example:
-        @cmd_rate_limit(calls=1, period=30)  # Allow 1 call every 30 seconds per user
-        async def cmd_somecommand(self, user, channel, args):
-            pass
-    """
-    def decorator(func):
-        if not hasattr(func, '_rate_limit_state'):
-            func._rate_limit_state = defaultdict(lambda: {"calls": [], "last_warning": 0})
-        @wraps(func)
-        async def wrapper(self, user, channel, args):
-            current_time = time.time()
-            user_id = user['user_id']
-            state = func._rate_limit_state[user_id]
-            # Clean up old calls
-            state['calls'] = [t for t in state['calls'] if current_time - t < period]
-            # Check if user has exceeded rate limit
-            if len(state['calls']) >= calls:
-                # Only send warning message every "warn_cooldown" seconds to prevent spam
-                if current_time - state['last_warning'] > warn_cooldown:
-                    wait_time = period - (current_time - state['calls'][0])
-                    await self.http.sendChatMessage(
-                        f"@{user['username']} Please wait {wait_time:.1f}s before using this command again.",
-                        broadcaster_id=channel["broadcaster_id"]
-                    )
-                    state['last_warning'] = current_time
-                return
-            # Add current call to the list
-            state['calls'].append(current_time)
-            # Execute the command
-            return await func(self, user, channel, args)
-        return wrapper
-    return decorator
