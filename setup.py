@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="poolguy",
-    version="0.1.7",
+    version="0.1.8",
     author="s4w3d0ff",
     author_email="",
     description="A Twitch bot framework with event subscription and alert handling capabilities",

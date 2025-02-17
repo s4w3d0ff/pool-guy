@@ -629,7 +629,21 @@ class TwitchApi(RequestHandler):
         }
         r = await self.api_request("post", apiEndpoints['whispers'], data=json.dumps(data))
         return r['data']
-        
+
+    async def modifyChannelInfo(self, broadcaster_id=None, **kwargs):
+        data = {"broadcaster_id": broadcaster_id or self.user_id}
+        # Add optional parameters if provided
+        valid_params = [
+            'game_id', 'broadcaster_language', 'title',
+            'delay', 'tags', 'content_classification_labels'
+        ]
+        for param in valid_params:
+            if param in kwargs:
+                data[param] = kwargs[param]
+                
+        r = await self.api_request("patch", apiEndpoints['broadcast'], data=json.dumps(data))
+        return r
+  
     #=========================================================================
     # Extras ===================================================================
     async def unsubAllEvents(self):
