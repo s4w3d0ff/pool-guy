@@ -1,7 +1,7 @@
 from .utils import json, asyncio, aiofiles, aiohttp
 from .utils import randString, datetime, timezone, timedelta
 from .utils import ColorLogger, web
-from .twitchws import TwitchWS
+from .twitchws import TwitchWebsocket
 from .twitch import CommandBot
 
 logger = ColorLogger(__name__)
