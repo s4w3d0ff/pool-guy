@@ -4,7 +4,7 @@ from .utils import ColorLogger, urlparse, wraps, web
 logger = ColorLogger(__name__)
 
 class WebServer:
-    def __init__(self, host, port, static_dirs=[], base_dir=None):
+    def __init__(self, host, port, static_dirs=None, base_dir=None):
         self.app = web.Application()
         self.host = host
         self.port = port
@@ -13,7 +13,7 @@ class WebServer:
         self._app_task = None
         self.routes = {}
         self.ws_handlers = {}
-        self.static_dirs = static_dirs
+        self.static_dirs = static_dirs or []
         self.base_dir = base_dir or os.path.expanduser('~')
     
     def is_running(self):
@@ -36,7 +36,7 @@ class WebServer:
         """Add a new route to the application."""
         if self.is_running():
             logger.warning("Adding route after server started - requires restart to take effect")
-            
+        
         route_info = {
             'handler': handler,
             'method': method,
@@ -97,6 +97,11 @@ class WebServer:
             await self._site.stop()
         if self._runner:
             await self._runner.cleanup()
+        self._app_task.cancel()
+        try:
+            await self._app_task
+        except asyncio.CancelledError:
+            pass
         self._app_task = None
         logger.warning("Server stopped")
 

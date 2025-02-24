@@ -1,41 +1,35 @@
 from .utils import asyncio, aiofiles, webbrowser, aiohttp, time
 from .utils import ColorLogger, defaultdict, web, wraps
-from .twitchws import Alert, TwitchWS
+from .twitchws import Alert, TwitchWebsocket
 
 logger = ColorLogger(__name__)
 
 class TwitchBot:
-    def __init__(self, http_config={}, ws_config={}, alert_objs={}, max_retries=3, retry_delay=30, login_browser=None, storage=None, static_dirs=[], base_dir=None):
-        self.http_config = http_config
-        self.ws_config = ws_config
-        self.alert_objs = alert_objs
-        self.storage = storage
+    def __init__(self, twitch_config=None, alert_objs=None, max_retries=3, retry_delay=30, **kwargs):
+        self._twitch_config = twitch_config or kwargs
+        self.alert_objs = alert_objs or {}
+        self.storage = None
         self.ws = None
         self.http = None
         self.app = None
         self._tasks = []
-        self.static_dirs = static_dirs
-        self.base_dir = base_dir
+        self._is_running = False
         self.retry_count = 0
-        self.is_running = False
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-        if isinstance(login_browser, dict):
-            self.login_browser, path = login_browser.popitem()
-            webbrowser.register(self.login_browser, None, webbrowser.BackgroundBrowser(path))
-        else:
-            self.login_browser = login_browser
 
-    async def add_task(self, coro, *args, **kwargs):
-        """ Adds a task to our list of tasks """
-        self._tasks.append(asyncio.create_task(coro(*args, **kwargs)))
-    
-    def add_alert_class(self, name, obj):
-        """ Adds alert classes to the AlertFactory cache """
-        self.ws.register_alert_class(name, obj)
-    
+    def _setup(self):
+        self.ws = TwitchWebsocket(bot=self, **self._twitch_config)
+        self.http = self.ws.http
+        self.app = self.ws.http.server
+        self.storage = self.ws.http.storage
+        self.register_routes()
+        if self.alert_objs:
+            for key, value in self.alert_objs.items():
+                self.add_alert_class(key, value)
+                
     async def start(self, hold=True):
-        self.is_running = True
+        self._is_running = True
         self._setup()
         await self.before_login()
         # start OAuth, websocket connection, and queue
@@ -43,22 +37,12 @@ class TwitchBot:
         await self.after_login()
         if hold:
             await self.hold()
-    
-    def _setup(self):
-        self.ws = TwitchWS(bot=self, creds=self.http_config, **self.ws_config, storage=self.storage, static_dirs=self.static_dirs, base_dir=self.base_dir, browser=self.login_browser)
-        self.http = self.ws.http
-        self.app = self.ws.http.server
-        self.storage = self.ws.storage
-        self.register_routes()
-        if self.alert_objs:
-            for key, value in self.alert_objs.items():
-                self.add_alert_class(key, value)
 
     async def shutdown(self, reset=True):
         """Gracefully shutdown the bot"""
         logger.warning("Shutting down TwitchBot...")
         if not reset:
-            self.is_running = False
+            self._is_running = False
         logger.warning("Closing TwitchWS...")
         await self.ws.close()
         # Clear all tasks
@@ -84,14 +68,22 @@ class TwitchBot:
         except Exception as e: # unexpected error, complete shutdown
             logger.error(f"Error in TwitchBot.hold(): {e}")
         await self.shutdown()
-        if self.is_running: # we shutdown but are still running
+        if self._is_running: # we shutdown but are still running
             self.retry_count += 1 # try again?
             logger.warning(f"WebSocket disconnected. Attempt {self.retry_count} of {self.max_retries}")
             if self.retry_count <= self.max_retries: # havent hit max retries
                 await self.restart() # start again
             else:
                 logger.error(f"Max retry attempts ({self.max_retries}) reached. Shutting down permanently.")
-
+                
+    async def add_task(self, coro, *args, **kwargs):
+        """ Adds a task to our list of tasks """
+        self._tasks.append(asyncio.create_task(coro(*args, **kwargs)))
+    
+    def add_alert_class(self, name, obj):
+        """ Adds alert classes to the AlertFactory cache """
+        self.ws.add_alert_class(name, obj)
+        
     async def before_login(self):
         """Use to execute logic before login"""
         pass
@@ -236,7 +228,7 @@ class CommandBot(TwitchBot):
         else:
             logger.debug(f"Unknown command: {command_name}")
 
-    @command()
+    @command(aliases=["help"])
     @rate_limit(calls=1, period=30, warn_cooldown=15)
     async def commands(self, user, channel, args):
         """Shows available commands. Usage: !commands [command]"""

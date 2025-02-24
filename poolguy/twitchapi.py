@@ -120,7 +120,7 @@ class TwitchApi(RequestHandler):
                 data = json.loads(kwargs['data'])
                 data['after'] = page['cursor']
                 kwargs['data'] = json.dumps(data)
-            r = await self.api_request(method, url, **kwargs)
+            r = await self._request(method, url, **kwargs)
             out += r['data']
             page = r['pagination']
         return out
@@ -157,7 +157,7 @@ class TwitchApi(RequestHandler):
                 "condition": condition,
                 "transport": {'method': 'websocket', 'session_id': session_id}
             }
-            return await self.api_request("post", apiEndpoints['eventsub'], data=json.dumps(data))
+            return await self._request("post", apiEndpoints['eventsub'], data=json.dumps(data))
         except Exception as e:
             logger.error(f"Failed to create EventSub subscription: \n{e}")
             logger.error(f"Request data was: \n{json.dumps(data)}")
@@ -165,7 +165,7 @@ class TwitchApi(RequestHandler):
 
     async def deleteEventSub(self, id):
         try:
-            r = await self.api_request("delete", f"{apiEndpoints['eventsub']}?id={id}")
+            r = await self._request("delete", f"{apiEndpoints['eventsub']}?id={id}")
             return True
         except:
             return False
@@ -176,25 +176,25 @@ class TwitchApi(RequestHandler):
             params["status"] = status
         if type:
             params["type"] = type
-        r = await self.api_request("get", apiEndpoints['eventsub'], params=params)
+        r = await self._request("get", apiEndpoints['eventsub'], params=params)
         return r
 
     #============================================================================
     # Badges Methods ================================================================
     async def getGlobalChatBadges(self):
-        r = await self.api_request("get", apiEndpoints['global_badges'])
+        r = await self._request("get", apiEndpoints['global_badges'])
         return r['data']
         
     async def getChannelChatBadges(self, broadcaster_id=None):
         params = {"broadcaster_id": broadcaster_id or self.user_id}
-        r = await self.api_request("get", apiEndpoints['channel_badges'], params=params)
+        r = await self._request("get", apiEndpoints['channel_badges'], params=params)
         return r['data']
 
     #============================================================================
     # Channel Methods ================================================================
     async def getChannelInfo(self, broadcaster_id=None):
         params = {"broadcaster_id": broadcaster_id or self.user_id}
-        r = await self.api_request("get", apiEndpoints['broadcast'], params=params)
+        r = await self._request("get", apiEndpoints['broadcast'], params=params)
         return r['data']
 
     async def getFollowedChannels(self, user_id=None, broadcaster_id=None):
@@ -202,7 +202,7 @@ class TwitchApi(RequestHandler):
             "user_id": user_id or self.user_id,
             "broadcaster_id": broadcaster_id
         }
-        r = await self.api_request("get", apiEndpoints['users_follows'], params=params)
+        r = await self._request("get", apiEndpoints['users_follows'], params=params)
         return r['data']
 
     async def getChannelFollowers(self, broadcaster_id=None, first=None):
@@ -211,7 +211,7 @@ class TwitchApi(RequestHandler):
         params = {"broadcaster_id": broadcaster_id or self.user_id}
         if first:
             params["first"] = first
-        r = await self.api_request(method, url, params=params)
+        r = await self._request(method, url, params=params)
         out = r['data']
         if 'cursor' in r['pagination'] and not first:
             out += await self._continuePage(method, url, r['pagination'], params=params)
@@ -225,7 +225,7 @@ class TwitchApi(RequestHandler):
             "sender_id": self.user_id,
             "message": message[:399] # 400 char limit
         }
-        r = await self.api_request("post", apiEndpoints['chat'], data=json.dumps(data))
+        r = await self._request("post", apiEndpoints['chat'], data=json.dumps(data))
         return r['data']
 
     async def getChatters(self, broadcaster_id=None, moderator_id=None):
@@ -233,7 +233,7 @@ class TwitchApi(RequestHandler):
             "broadcaster_id": broadcaster_id or self.user_id,
             "moderator_id": moderator_id or self.user_id
         }
-        r = await self.api_request("get", f"{apiEndpoints['chat']}/chatters", params=params)
+        r = await self._request("get", f"{apiEndpoints['chat']}/chatters", params=params)
         return r['data']
 
     async def getChatSettings(self, broadcaster_id=None, moderator_id=None):
@@ -241,13 +241,13 @@ class TwitchApi(RequestHandler):
             "broadcaster_id": broadcaster_id or self.user_id,
             "moderator_id": moderator_id or self.user_id
         }
-        r = await self.api_request("get", f"{apiEndpoints['chat']}/settings", params=params)
+        r = await self._request("get", f"{apiEndpoints['chat']}/settings", params=params)
         return r['data']
 
     async def updateChatSettings(self, broadcaster_id=None, settings=None):
         data = settings or {}
         data["broadcaster_id"] = broadcaster_id or self.user_id
-        r = await self.api_request("patch", f"{apiEndpoints['chat']}/settings", data=json.dumps(data))
+        r = await self._request("patch", f"{apiEndpoints['chat']}/settings", data=json.dumps(data))
         return r['data']
 
     async def sendAnnouncement(self, broadcaster_id=None, message="", color="primary"):
@@ -256,7 +256,7 @@ class TwitchApi(RequestHandler):
             "message": message,
             "color": color
         }
-        r = await self.api_request("post", f"{apiEndpoints['chat']}/announcements", data=json.dumps(data))
+        r = await self._request("post", f"{apiEndpoints['chat']}/announcements", data=json.dumps(data))
         return r['data']
 
     async def sendShoutout(self, from_broadcaster_id=None, to_broadcaster_id=None, moderator_id=None):
@@ -265,14 +265,14 @@ class TwitchApi(RequestHandler):
             "to_broadcaster_id": to_broadcaster_id,
             "moderator_id": moderator_id or self.user_id
         }
-        r = await self.api_request("post", f"{apiEndpoints['chat']}/shoutouts", data=json.dumps(data))
+        r = await self._request("post", f"{apiEndpoints['chat']}/shoutouts", data=json.dumps(data))
         return r['data']
         
     #============================================================================
     # Clips Methods ================================================================
     async def createClip(self, broadcaster_id=None):
         data = {"broadcaster_id": broadcaster_id or self.user_id}
-        r = await self.api_request("post", apiEndpoints['clips'], data=json.dumps(data))
+        r = await self._request("post", apiEndpoints['clips'], data=json.dumps(data))
         return r['data']
 
     async def getClips(self, broadcaster_id=None, game_id=None, clip_id=None, first=None):
@@ -286,7 +286,7 @@ class TwitchApi(RequestHandler):
             params["game_id"] = game_id
         if clip_id:
             params["id"] = clip_id
-        r = await self.api_request(method, url, params=params)
+        r = await self._request(method, url, params=params)
         out = r['data']
         if 'cursor' in r['pagination'] and not first:
             out += await self._continuePage(method, url, r['pagination'], params=params)
@@ -299,7 +299,7 @@ class TwitchApi(RequestHandler):
             "broadcaster_id": broadcaster_id or self.user_id,
             "length": length
         }
-        r = await self.api_request("post", apiEndpoints['commercial'], data=json.dumps(data))
+        r = await self._request("post", apiEndpoints['commercial'], data=json.dumps(data))
         return r['data']
         
     #============================================================================
@@ -310,7 +310,7 @@ class TwitchApi(RequestHandler):
         params = {"count": count, "period": period}
         if started_at:
             params["started_at"] = started_at
-        r = await self.api_request(method, url, params=params)
+        r = await self._request(method, url, params=params)
         return r['data']
         
     #============================================================================
@@ -319,7 +319,7 @@ class TwitchApi(RequestHandler):
         method = "get"
         url = apiEndpoints['categories']
         params = {"first": first or 20}
-        r = await self.api_request(method, url, params=params)
+        r = await self._request(method, url, params=params)
         out = r['data']
         if 'cursor' in r['pagination'] and not first:
             out += await self._continuePage(method, url, r['pagination'], params=params)
@@ -329,21 +329,21 @@ class TwitchApi(RequestHandler):
     # Goals Methods ================================================================
     async def getCreatorGoals(self, broadcaster_id=None):
         params = {"broadcaster_id": broadcaster_id or self.user_id}
-        r = await self.api_request("get", apiEndpoints['goals'], params=params)
+        r = await self._request("get", apiEndpoints['goals'], params=params)
         return r['data']
         
     #============================================================================
     # Hype Train Methods ================================================================
     async def getHypeTrainEvents(self, broadcaster_id=None):
         params = {"broadcaster_id": broadcaster_id or self.user_id}
-        r = await self.api_request("get", apiEndpoints['hype_train'], params=params)
+        r = await self._request("get", apiEndpoints['hype_train'], params=params)
         return r['data']
         
     #============================================================================
     # Moderation Methods ================================================================
     async def getBannedUsers(self, broadcaster_id=None):
         params = {"broadcaster_id": broadcaster_id or self.user_id}
-        r = await self.api_request("get", apiEndpoints['banned_users'], params=params)
+        r = await self._request("get", apiEndpoints['banned_users'], params=params)
         return r['data']
 
     async def banUser(self, broadcaster_id=None, user_id=None, reason=None, duration=None):
@@ -359,7 +359,7 @@ class TwitchApi(RequestHandler):
         }
         if duration:
             data["data"]["duration"] = duration
-        r = await self.api_request("post", apiEndpoints['ban'], params=params, data=json.dumps(data))
+        r = await self._request("post", apiEndpoints['ban'], params=params, data=json.dumps(data))
         return r['data']
 
     async def unbanUser(self, broadcaster_id=None, user_id=None):
@@ -367,14 +367,14 @@ class TwitchApi(RequestHandler):
             "broadcaster_id": broadcaster_id or self.user_id,
             "user_id": user_id
         }
-        r = await self.api_request("delete", apiEndpoints['ban'], params=params)
+        r = await self._request("delete", apiEndpoints['ban'], params=params)
         return r['data']
         
     #============================================================================
     # Moderator Methods ================================================================
     async def getModerators(self, broadcaster_id=None):
         params = {"broadcaster_id": broadcaster_id or self.user_id}
-        r = await self.api_request("get", apiEndpoints['moderators'], params=params)
+        r = await self._request("get", apiEndpoints['moderators'], params=params)
         return r['data']
 
     async def addModerator(self, broadcaster_id=None, user_id=None):
@@ -382,7 +382,7 @@ class TwitchApi(RequestHandler):
             "broadcaster_id": broadcaster_id or self.user_id,
             "user_id": user_id
         }
-        r = await self.api_request("post", apiEndpoints['moderators'], data=json.dumps(data))
+        r = await self._request("post", apiEndpoints['moderators'], data=json.dumps(data))
         return r['data']
 
     async def removeModerator(self, broadcaster_id=None, user_id=None):
@@ -390,14 +390,14 @@ class TwitchApi(RequestHandler):
             "broadcaster_id": broadcaster_id or self.user_id,
             "user_id": user_id
         }
-        r = await self.api_request("delete", apiEndpoints['moderators'], params=params)
+        r = await self._request("delete", apiEndpoints['moderators'], params=params)
         return r['data']
         
     #============================================================================
     # VIP Methods ================================================================
     async def getVIPs(self, broadcaster_id=None):
         params = {"broadcaster_id": broadcaster_id or self.user_id}
-        r = await self.api_request("get", apiEndpoints['channel_vips'], params=params)
+        r = await self._request("get", apiEndpoints['channel_vips'], params=params)
         return r['data']
 
     async def addVIP(self, broadcaster_id=None, user_id=None):
@@ -405,7 +405,7 @@ class TwitchApi(RequestHandler):
             "broadcaster_id": broadcaster_id or self.user_id,
             "user_id": user_id
         }
-        r = await self.api_request("post", apiEndpoints['channel_vips'], data=json.dumps(data))
+        r = await self._request("post", apiEndpoints['channel_vips'], data=json.dumps(data))
         return r['data']
 
     async def removeVIP(self, broadcaster_id=None, user_id=None):
@@ -413,7 +413,7 @@ class TwitchApi(RequestHandler):
             "broadcaster_id": broadcaster_id or self.user_id,
             "user_id": user_id
         }
-        r = await self.api_request("delete", apiEndpoints['channel_vips'], params=params)
+        r = await self._request("delete", apiEndpoints['channel_vips'], params=params)
         return r['data']
         
     #============================================================================
@@ -424,7 +424,7 @@ class TwitchApi(RequestHandler):
             "user_id": user_id,
             "reason": reason
         }
-        r = await self.api_request("post", f"{apiEndpoints['chat']}/warnings", data=json.dumps(data))
+        r = await self._request("post", f"{apiEndpoints['chat']}/warnings", data=json.dumps(data))
         return r['data']
         
     #============================================================================
@@ -433,7 +433,7 @@ class TwitchApi(RequestHandler):
         method = "get"
         url = apiEndpoints['polls']
         params = {"broadcaster_id": broadcaster_id or self.user_id, "first": first or 20}
-        r = await self.api_request(method, url, params=params)
+        r = await self._request(method, url, params=params)
         out = r['data']
         if 'cursor' in r['pagination'] and not first:
             out += await self._continuePage(method, url, r['pagination'], params=params)
@@ -446,7 +446,7 @@ class TwitchApi(RequestHandler):
             "choices": choices,
             "duration": duration
         }
-        r = await self.api_request("post", apiEndpoints['polls'], data=json.dumps(data))
+        r = await self._request("post", apiEndpoints['polls'], data=json.dumps(data))
         return r['data']
 
     async def endPoll(self, broadcaster_id=None, poll_id=None, status="TERMINATED"):
@@ -455,7 +455,7 @@ class TwitchApi(RequestHandler):
             "id": poll_id,
             "status": status
         }
-        r = await self.api_request("patch", apiEndpoints['polls'], data=json.dumps(data))
+        r = await self._request("patch", apiEndpoints['polls'], data=json.dumps(data))
         return r['data']
         
     #============================================================================
@@ -464,7 +464,7 @@ class TwitchApi(RequestHandler):
         method = "get"
         url = apiEndpoints['predictions']
         params = {"broadcaster_id": broadcaster_id or self.user_id, "first": first or 20}
-        r = await self.api_request(method, url, params=params)
+        r = await self._request(method, url, params=params)
         out = r['data']
         if 'cursor' in r['pagination'] and not first:
             out += await self._continuePage(method, url, r['pagination'], params=params)
@@ -477,7 +477,7 @@ class TwitchApi(RequestHandler):
             "outcomes": outcomes,
             "prediction_window": prediction_window
         }
-        r = await self.api_request("post", apiEndpoints['predictions'], data=json.dumps(data))
+        r = await self._request("post", apiEndpoints['predictions'], data=json.dumps(data))
         return r['data']
 
     async def endPrediction(self, broadcaster_id=None, id=None, status="RESOLVED", winning_outcome_id=None):
@@ -488,7 +488,7 @@ class TwitchApi(RequestHandler):
         }
         if winning_outcome_id:
             data["winning_outcome_id"] = winning_outcome_id
-        r = await self.api_request("patch", apiEndpoints['predictions'], data=json.dumps(data))
+        r = await self._request("patch", apiEndpoints['predictions'], data=json.dumps(data))
         return r['data']
         
     #============================================================================
@@ -498,12 +498,12 @@ class TwitchApi(RequestHandler):
             "from_broadcaster_id": from_broadcaster_id or self.user_id,
             "to_broadcaster_id": to_broadcaster_id
         }
-        r = await self.api_request("post", apiEndpoints['raids'], data=json.dumps(data))
+        r = await self._request("post", apiEndpoints['raids'], data=json.dumps(data))
         return r['data']
 
     async def cancelRaid(self, broadcaster_id=None):
         params = {"broadcaster_id": broadcaster_id or self.user_id}
-        r = await self.api_request("delete", apiEndpoints['raids'], params=params)
+        r = await self._request("delete", apiEndpoints['raids'], params=params)
         return r['data']
         
     #============================================================================
@@ -512,7 +512,7 @@ class TwitchApi(RequestHandler):
         method = "get"
         url = f"{apiEndpoints['categories']}/search"
         params = {"query": query, "first": first or 20}
-        r = await self.api_request(method, url, params=params)
+        r = await self._request(method, url, params=params)
         out = r['data']
         if 'cursor' in r['pagination'] and not first:
             out += await self._continuePage(method, url, r['pagination'], params=params)
@@ -522,7 +522,7 @@ class TwitchApi(RequestHandler):
         method = "get"
         url = f"{apiEndpoints['broadcast']}/search"
         params = {"query": query, "first": first or 20, "live_only": live_only}
-        r = await self.api_request(method, url, params=params)
+        r = await self._request(method, url, params=params)
         out = r['data']
         if 'cursor' in r['pagination'] and not first:
             out += await self._continuePage(method, url, r['pagination'], params=params)
@@ -535,7 +535,7 @@ class TwitchApi(RequestHandler):
         url = apiEndpoints['streams']
         kwargs['first'] = first or 100
         query_string = urlencode(kwargs, doseq=True)
-        r = await self.api_request(method, f"{url}?{query_string}")
+        r = await self._request(method, f"{url}?{query_string}")
         out = r['data']
         if 'cursor' in r['pagination'] and not first:
             out += await self._continuePage(method, f"{url}?{query_string}", r['pagination'], params=kwargs)
@@ -547,7 +547,7 @@ class TwitchApi(RequestHandler):
         params = {"user_id": user_id or self.user_id}
         if first:
             params["first"] = first
-        r = await self.api_request(method, url, params=params)
+        r = await self._request(method, url, params=params)
         out = r['data']
         if 'cursor' in r['pagination'] and not first:
             out += await self._continuePage(method, url, r['pagination'], params=params)
@@ -558,14 +558,14 @@ class TwitchApi(RequestHandler):
             "user_id": self.user_id,
             "description": description
         }
-        r = await self.api_request("post", apiEndpoints['stream_markers'], data=json.dumps(data))
+        r = await self._request("post", apiEndpoints['stream_markers'], data=json.dumps(data))
         return r['data']
 
     async def getStreamMarkers(self, user_id=None, video_id=None, first=None):
         method = "get"
         url = apiEndpoints['stream_markers']
         params = {"user_id": user_id, "video_id": video_id, "first": first or 20}
-        r = await self.api_request(method, url, params=params)
+        r = await self._request(method, url, params=params)
         out = r['data']
         if 'cursor' in r['pagination'] and not first:
             out += await self._continuePage(method, url, r['pagination'], params=params)
@@ -573,22 +573,27 @@ class TwitchApi(RequestHandler):
         
     #============================================================================
     # Subscription Methods ================================================================
-    async def getBroadcasterSubscriptions(self, broadcaster_id=None, first=None):
+    async def getBroadcasterSubscriptions(self, user_id=None, broadcaster_id=None, first=None):
         method = "get"
         url = apiEndpoints['subscriptions']
         params = {"broadcaster_id": broadcaster_id or self.user_id, "first": first or 100}
-        r = await self.api_request(method, url, params=params)
+        if user_id:
+            if isinstance(user_id, list):
+                params["user_id"] = user_id[:100]  # Limit to max 100 IDs
+            else:
+                params["user_id"] = [user_id]  # Single ID as list
+        r = await self._request(method, url, params=params)
         out = r['data']
-        if 'cursor' in r['pagination'] and not first:
+        if 'pagination' in r and 'cursor' in r['pagination'] and not first:
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
 
-    async def checkUserSubscription(self, broadcaster_id, user_id=None):
+    async def checkUserSubscription(self, broadcaster_id=None, user_id=None):
         params = {
-            "broadcaster_id": broadcaster_id,
+            "broadcaster_id": broadcaster_id or self.user_id,
             "user_id": user_id or self.user_id
         }
-        r = await self.api_request("get", apiEndpoints['subscriptions'], params=params)
+        r = await self._request("get", apiEndpoints['subscriptions'], params=params)
         return r['data']
         
     #============================================================================
@@ -597,7 +602,7 @@ class TwitchApi(RequestHandler):
         method = "get"
         url = apiEndpoints['tags']
         params = {"first": first or 20}
-        r = await self.api_request(method, url, params=params)
+        r = await self._request(method, url, params=params)
         out = r['data']
         if 'cursor' in r['pagination'] and not first:
             out += await self._continuePage(method, url, r['pagination'], params=params)
@@ -607,7 +612,7 @@ class TwitchApi(RequestHandler):
         params = {
             "broadcaster_id": broadcaster_id or self.user_id
         }
-        r = await self.api_request("get", apiEndpoints['tags'], params=params)
+        r = await self._request("get", apiEndpoints['tags'], params=params)
         return r['data']
         
     #============================================================================
@@ -618,7 +623,7 @@ class TwitchApi(RequestHandler):
             params["id"] = ids if isinstance(ids, list) else [ids]
         if logins:
             params["login"] = logins if isinstance(logins, list) else [logins]
-        r = await self.api_request("get", apiEndpoints['user'], params=params)
+        r = await self._request("get", apiEndpoints['user'], params=params)
         return r['data']
 
     async def sendWhisper(self, to_user_id, message):
@@ -627,7 +632,7 @@ class TwitchApi(RequestHandler):
             "to_user_id": to_user_id,
             "message": message
         }
-        r = await self.api_request("post", apiEndpoints['whispers'], data=json.dumps(data))
+        r = await self._request("post", apiEndpoints['whispers'], data=json.dumps(data))
         return r['data']
 
     async def modifyChannelInfo(self, broadcaster_id=None, **kwargs):
@@ -641,7 +646,7 @@ class TwitchApi(RequestHandler):
             if param in kwargs:
                 data[param] = kwargs[param]
                 
-        r = await self.api_request("patch", apiEndpoints['broadcast'], data=json.dumps(data))
+        r = await self._request("patch", apiEndpoints['broadcast'], data=json.dumps(data))
         return r
   
     #=========================================================================

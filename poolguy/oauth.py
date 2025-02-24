@@ -10,18 +10,24 @@ oauthEndpoint = "https://id.twitch.tv/oauth2/authorize"
 validateEndoint = "https://id.twitch.tv/oauth2/validate"
 
 class TokenHandler:
-    def __init__(self, client_id=None, client_secret=None, redirect_uri=None, scopes=[], storage=None, webserver=None, browser=None, *args, **kwargs):
+    def __init__(self, client_id=None, client_secret=None, redirect_uri=None, scopes=None, storage=None, webserver=None, browser=None):
         if not client_id or not client_secret:
             raise ValueError(f"Client id and secret required!")
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
-        self.scopes = scopes
+        self.scopes = scopes or []
+        #--------
         self.storage = storage or StorageFactory.create_storage('json')
         parsed_uri = urlparse(self.redirect_uri)
         self.server = webserver or WebServer(parsed_uri.hostname, parsed_uri.port)
         self.server.add_route(f"/{parsed_uri.path.lstrip('/')}", self._callback_handler)
-        self.browser = browser
+        if isinstance(browser, dict):
+            self.browser, path = browser.popitem()
+            webbrowser.register(self.browser, None, webbrowser.BackgroundBrowser(path))
+        else:
+            self.browser = browser
+        #--------
         self.user_id = None
         self._refresh_event = asyncio.Event()
         self._refresh_task = None
@@ -32,6 +38,7 @@ class TokenHandler:
         self._running = False
         
     async def _callback_handler(self, request):
+        """ Handles the oauth code callback """
         if request.query.get('state') != self._state:
             return web.Response(text="State mismatch. Authorization failed.", status=400)
         if 'error' in request.query:
@@ -42,6 +49,7 @@ class TokenHandler:
         return web.Response(text=closeBrowser, content_type='text/html', charset='utf-8')
 
     async def _get_auth_code(self):
+        """ Opens browser to get oauth code to use for token """
         logger.warning(f"Opening browser to get Oauth code...")
         if not self.server.is_running():
             await self.server.start()
@@ -59,6 +67,7 @@ class TokenHandler:
             # open webbrowser with auth link
             bro = webbrowser.get(self.browser)
             bro.open(auth_link, new=1)
+            logger.warning(f"Waiting for oauth code... {auth_link}")
         except:
             # cant open webbrowser, show auth link for user to copy/paste
             logger.error(f"Couldn't open {self.browser or 'default'} browser!: \n{auth_link}")
@@ -67,17 +76,17 @@ class TokenHandler:
         if self.server.route_len() <= 1:
             # nothing else is registered to the webserver, stop it
             await self.server.stop()
-        logger.warning(f"Got Oauth code!")
+        logger.warning(f"Got oauth code!")
 
     async def _token_request(self, headers, data):
         """ Base token request method, used for new or refreshing tokens """
-        if self._token:
-            # temp store refresh token (incase one isnt sent)
-            r_token = self._token['refresh_token']
         async with aiohttp.ClientSession() as session:
             async with session.post(tokenEndpoint, headers=headers, data=data) as resp:
                 if resp.status != 200:
                     raise Exception(f"Token request failed: {await resp.text()}")
+                if self._token:
+                    # temp store refresh token (incase one isnt sent)
+                    r_token = self._token['refresh_token']
                 self._token = await resp.json()
                 if "refresh_token" not in self._token:
                     self._token['refresh_token'] = r_token 
@@ -85,7 +94,7 @@ class TokenHandler:
                 await self.storage.save_token(self._token, name="twitch")
                 return self._token
 
-    async def _refresh_token(self):
+    async def _refresh(self):
         """ Refresh oauth token, get new token if refresh fails """
         logger.warning(f"Refreshing token...")
         # pause 'self.get_token'
@@ -132,52 +141,69 @@ class TokenHandler:
                 logger.debug(f"Auth validation response: \n{json.dumps(auth_check, indent=2)}")
                 match response.status:
                     case 200:
-                        return auth_check
+                        return True, auth_check
+                    case 401:
+                        return False, auth_check
                     case _:
                         response.raise_for_status()
+                        return response.status
 
-    async def _token_refresher(self):
+    async def _refresher(self):
         """ Validates token every hour, refreshes if expires """
         self._running = True
         self._refresh_event.set()
-        logger.debug(f"_token_refresher started...")
+        logger.debug(f"token _refresher started...")
         while self._running:
-            try:
-                logger.info(f'Validating twitch token...')
-                r = await self._validate_auth()
-                self.user_id = r["user_id"]
-            except Exception as e:
-                logger.error(f'_token_refresher error: {e}')
-                # refresh token
-                await self._refresh_token()
+            logger.info(f'Validating twitch token...')
+            result, output = await self._validate_auth()
+            if not result: # validate failed
+                logger.info(f'Validation failed: {output}')
+                await self._refresh()
                 continue
+            self.user_id = output["user_id"]
             if self._token['expires_time'] <= time.time()+3600:
                 # refresh if expiring in the next hour
-                await self._refresh_token()
+                await self._refresh()
                 continue
-            await asyncio.sleep(3600)
+            try:
+                await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                self._running = False
 
     async def _run(self):
+        """ Starts/creates the _refresher task """
         self._refresh_task = None
-        self._refresh_task = asyncio.create_task(self._token_refresher())
-
-    async def stop(self):
-        self._running = False
-        try:
-            await asyncio.wait_for(self._refresh_task, timeout=15)
-        except TimeoutError:
-            logger.warning('The task was cancelled due to a timeout')
+        self._refresh_task = asyncio.create_task(self._refresher())
 
     async def _login(self, token=None):
         """ Checks storage for saved token, gets new token if one isnt found. Starts the token refresher task """
-        logger.debug(f"Attempting to load saved token...")
-        self._token = await self.storage.load_token(name="twitch")
+        if token:
+            self._token = token
+        else:
+            logger.warning(f"Attempting to load saved token...")
+            self._token = await self.storage.load_token(name="twitch")
         if self._token:
-            logger.warning(f"Loaded saved token from storage!")
+            logger.warning(f"Loaded token!")
         else:
             self._token = await self._get_new_token()
         if not self._running:
             await self._run()
+        else:
+            result, output = await self._validate_auth()
+            if not result: # validate failed
+                logger.info(f'Validation failed: {output}')
+                await self._refresh()
+
+    async def stop(self):
+        """ Stops the _refresher task """
+        self._running = False
+        self._refresh_task.cancel()
+        try:
+            await self._refresh_task
+        except asyncio.CancelledError:
+            pass
+        self._refresh_task = None
+        logger.warning(f"token _refresher stopped...")
 
     async def get_token(self):
         """ Returns current token after checking if the token needs to be refreshed """
@@ -186,3 +212,6 @@ class TokenHandler:
         # wait for refresh if needed
         await self._refresh_event.wait()
         return self._token
+
+    async def __call__(self):
+        return await self.get_token()
