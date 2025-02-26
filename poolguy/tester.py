@@ -3,6 +3,7 @@ from .utils import randString, datetime, timezone, timedelta
 from .utils import ColorLogger, web
 from .twitchws import TwitchWebsocket
 from .twitch import CommandBot
+from .webserver import route
 
 logger = ColorLogger(__name__)
 
@@ -279,105 +280,101 @@ async def inject_custom_twitchws_message(ws, message):
 
 
 class Tester(CommandBot):
-    async def before_login(self):
-        self._register_test_routes()
+    @route('/testui')
+    async def testui(self, request):
+        async with aiofiles.open('templates/testui.html', 'r', encoding='utf-8') as f:
+            template = await f.read()
+            return web.Response(text=template, content_type='text/html', charset='utf-8')
+            
+    @route("/testcheer/{amount}/{anon}")
+    async def testcheer(self, request):
+        payload = test_payloads["channel.cheer"]
+        payload["event"]["bits"] = int(request.match_info['amount'])
+        payload["event"]["is_anonymous"] = False if request.match_info['anon'] == 'False' else True
+        await inject_custom_twitchws_message(
+            self.ws, 
+            {"metadata": test_meta_data(), "payload": payload}
+        )
+        return web.json_response({"status": True})
     
-    def _register_test_routes(self):
-        @self.app.route('/testui')
-        async def testui(request):
-            async with aiofiles.open('templates/testui.html', 'r', encoding='utf-8') as f:
-                template = await f.read()
-                return web.Response(text=template, content_type='text/html', charset='utf-8')
-                
-        @self.app.route("/testcheer/{amount}/{anon}")
-        async def testcheer(request):
-            payload = test_payloads["channel.cheer"]
-            payload["event"]["bits"] = int(request.match_info['amount'])
-            payload["event"]["is_anonymous"] = False if request.match_info['anon'] == 'False' else True
-            await inject_custom_twitchws_message(
-                self.ws, 
-                {"metadata": test_meta_data(), "payload": payload}
-            )
-            return web.json_response({"status": True})
-        
-        @self.app.route("/testsub/{tier}/{gifted}")
-        async def testsub(request):
-            payload = test_payloads["channel.subscribe"]
-            payload["event"]["tier"] = request.match_info['tier']
-            payload["event"]["is_gift"] = False if request.match_info['gifted'] == 'False' else True
-            await inject_custom_twitchws_message(
-                self.ws, 
-                {"metadata": test_meta_data(), "payload": payload}
-            )
-            return web.json_response({"status": True})
+    @route("/testsub/{tier}/{gifted}")
+    async def testsub(self, request):
+        payload = test_payloads["channel.subscribe"]
+        payload["event"]["tier"] = request.match_info['tier']
+        payload["event"]["is_gift"] = False if request.match_info['gifted'] == 'False' else True
+        await inject_custom_twitchws_message(
+            self.ws, 
+            {"metadata": test_meta_data(), "payload": payload}
+        )
+        return web.json_response({"status": True})
 
 
-        @self.app.route("/testsubgift/{amount}/{tier}/{anon}")
-        async def testsubgift(request):
-            payload = test_payloads["channel.subscription.gift"]
-            payload["event"]["total"] = int(request.match_info['amount'])
-            payload["event"]["tier"] = request.match_info['tier']
-            payload["event"]["is_anonymous"] = False if request.match_info['anon'] == 'False' else True
-            await inject_custom_twitchws_message(
-                self.ws, 
-                {"metadata": test_meta_data(), "payload": payload}
-            )
-            return web.json_response({"status": True})
+    @route("/testsubgift/{amount}/{tier}/{anon}")
+    async def testsubgift(self, request):
+        payload = test_payloads["channel.subscription.gift"]
+        payload["event"]["total"] = int(request.match_info['amount'])
+        payload["event"]["tier"] = request.match_info['tier']
+        payload["event"]["is_anonymous"] = False if request.match_info['anon'] == 'False' else True
+        await inject_custom_twitchws_message(
+            self.ws, 
+            {"metadata": test_meta_data(), "payload": payload}
+        )
+        return web.json_response({"status": True})
 
-        @self.app.route("/testsubmessage/{months}/{tier}/{streak}/{duration}")
-        async def testsubmessage(request):
-            payload = test_payloads["channel.subscription.message"]
-            payload["event"]["tier"] = request.match_info['tier']
-            payload["event"]["cumulative_months"] = int(request.match_info['months'])
-            payload["event"]["streak_months"] = int(request.match_info['streak'])
-            payload["event"]["duration_months"] = int(request.match_info['duration'])
-            await inject_custom_twitchws_message(
-                self.ws, 
-                {"metadata": test_meta_data(), "payload": payload}
-            )
-            return web.json_response({"status": True})
+    @route("/testsubmessage/{months}/{tier}/{streak}/{duration}")
+    async def testsubmessage(self, request):
+        payload = test_payloads["channel.subscription.message"]
+        payload["event"]["tier"] = request.match_info['tier']
+        payload["event"]["cumulative_months"] = int(request.match_info['months'])
+        payload["event"]["streak_months"] = int(request.match_info['streak'])
+        payload["event"]["duration_months"] = int(request.match_info['duration'])
+        await inject_custom_twitchws_message(
+            self.ws, 
+            {"metadata": test_meta_data(), "payload": payload}
+        )
+        return web.json_response({"status": True})
 
-        @self.app.route("/testgoal/{type}/{current}/{target}")
-        async def testgoal(request):
-            payload = test_payloads["channel.goal.progress"]
-            payload["event"]["type"] = request.match_info['type']
-            payload["event"]["current_amount"] = int(request.match_info['current'])
-            payload["event"]["target_amount"] = int(request.match_info['target'])
-            await inject_custom_twitchws_message(
-                self.ws, 
-                {"metadata": test_meta_data(), "payload": payload}
-            )
-            return web.json_response({"status": True})
+    @route("/testgoal/{type}/{current}/{target}")
+    async def testgoal(self, request):
+        payload = test_payloads["channel.goal.progress"]
+        payload["event"]["type"] = request.match_info['type']
+        payload["event"]["current_amount"] = int(request.match_info['current'])
+        payload["event"]["target_amount"] = int(request.match_info['target'])
+        await inject_custom_twitchws_message(
+            self.ws, 
+            {"metadata": test_meta_data(), "payload": payload}
+        )
+        return web.json_response({"status": True})
 
-        @self.app.route("/testhypetrain/{level}/{total}/{progress}")
-        async def testhypetrain(request):
-            payload = test_payloads["channel.hype_train.progress"]
-            payload["event"]["level"] = int(request.match_info['level'])
-            payload["event"]["total"] = int(request.match_info['total'])
-            payload["event"]["progress"] = int(request.match_info['progress'])
-            payload["event"]["goal"] = 100 * int(request.match_info['level']) #Goal increases with level
-            await inject_custom_twitchws_message(
-                self.ws, 
-                {"metadata": test_meta_data(), "payload": payload}
-            )
-            return web.json_response({"status": True})
+    @route("/testhypetrain/{level}/{total}/{progress}")
+    async def testhypetrain(self, request):
+        payload = test_payloads["channel.hype_train.progress"]
+        payload["event"]["level"] = int(request.match_info['level'])
+        payload["event"]["total"] = int(request.match_info['total'])
+        payload["event"]["progress"] = int(request.match_info['progress'])
+        payload["event"]["goal"] = 100 * int(request.match_info['level']) #Goal increases with level
+        await inject_custom_twitchws_message(
+            self.ws, 
+            {"metadata": test_meta_data(), "payload": payload}
+        )
+        return web.json_response({"status": True})
 
-        @self.app.route("/testhypetrainend/{level}/{total}")
-        async def testhypetrainend(request):
-            payload = test_payloads["channel.hype_train.end"]
-            payload["event"]["level"] = int(request.match_info['level'])
-            payload["event"]["total"] = int(request.match_info['total'])
-            await inject_custom_twitchws_message(
-                self.ws, 
-                {"metadata": test_meta_data(), "payload": payload}
-            )
-            return web.json_response({"status": True})
+    @route("/testhypetrainend/{level}/{total}")
+    async def testhypetrainend(self, request):
+        payload = test_payloads["channel.hype_train.end"]
+        payload["event"]["level"] = int(request.match_info['level'])
+        payload["event"]["total"] = int(request.match_info['total'])
+        await inject_custom_twitchws_message(
+            self.ws, 
+            {"metadata": test_meta_data(), "payload": payload}
+        )
+        return web.json_response({"status": True})
 
-        @self.app.route("/testchatnoto")
-        async def testchatnoto(request):
-            payload = test_payloads["channel.chat.notification"]
-            await inject_custom_twitchws_message(
-                self.ws, 
-                {"metadata": test_meta_data(), "payload": payload}
-            )
-            return web.json_response({"status": True})
+    @route("/testchatnoto")
+    async def testchatnoto(self, request):
+        payload = test_payloads["channel.chat.notification"]
+        await inject_custom_twitchws_message(
+            self.ws, 
+            {"metadata": test_meta_data(), "payload": payload}
+        )
+        return web.json_response({"status": True})

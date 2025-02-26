@@ -4,6 +4,7 @@ from .twitchws import Alert, TwitchWebsocket
 
 logger = ColorLogger(__name__)
 
+
 class TwitchBot:
     def __init__(self, twitch_config=None, alert_objs=None, max_retries=3, retry_delay=30, **kwargs):
         self._twitch_config = twitch_config or kwargs
@@ -17,16 +18,28 @@ class TwitchBot:
         self.retry_count = 0
         self.max_retries = max_retries
         self.retry_delay = retry_delay
-
+        
     def _setup(self):
         self.ws = TwitchWebsocket(bot=self, **self._twitch_config)
         self.http = self.ws.http
         self.app = self.ws.http.server
         self.storage = self.ws.http.storage
-        self.register_routes()
+        self._register_routes_and_websockets()
         if self.alert_objs:
             for key, value in self.alert_objs.items():
                 self.add_alert_class(key, value)
+
+    def _register_routes_and_websockets(self):
+        """Register all methods decorated with @route and @websocket"""
+        for attr_name in dir(self):
+            attr = getattr(self, attr_name)
+            # Register routes
+            if hasattr(attr, '_is_route'):
+                self.app.add_route(attr._route_path, attr, attr._route_method, **attr._route_kwargs)
+
+            # Register WebSocket endpoints
+            if hasattr(attr, '_is_websocket'):
+                self.app.add_websocket(attr._ws_path, attr, **attr._ws_kwargs)
                 
     async def start(self, hold=True):
         self._is_running = True
@@ -228,7 +241,7 @@ class CommandBot(TwitchBot):
         else:
             logger.debug(f"Unknown command: {command_name}")
 
-    @command(aliases=["help"])
+    @command
     @rate_limit(calls=1, period=30, warn_cooldown=15)
     async def commands(self, user, channel, args):
         """Shows available commands. Usage: !commands [command]"""

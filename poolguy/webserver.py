@@ -111,16 +111,34 @@ class WebServer:
         await self.start()
         logger.info("Server restarted.")
 
-    def route(self, path, method='GET', **kwargs):
-        """Decorator for registering routes."""
-        def decorator(handler):
-            self.add_route(path, handler, method, **kwargs)
-            return handler
-        return decorator
+def route(path, method='GET', **kwargs):
+    """
+    Route decorator to mark methods as HTTP endpoints
+    
+    Args:
+        path (str): URL path for the route
+        method (str): HTTP method (GET, POST, etc)
+        **kwargs: Additional arguments passed to the router
+    """
+    def decorator(func):
+        func._is_route = True
+        func._route_path = path
+        func._route_method = method
+        func._route_kwargs = kwargs
+        return func
+    return decorator
 
-    def websocket(self, path, **kwargs):
-        """Decorator for registering WebSocket endpoints."""
-        def decorator(handler):
-            self.add_websocket(path, handler, **kwargs)
-            return handler
-        return decorator
+def websocket(path, **kwargs):
+    """
+    WebSocket decorator to mark methods as WebSocket endpoints
+    
+    Args:
+        path (str): URL path for the WebSocket endpoint
+        **kwargs: Additional arguments passed to the WebSocket handler
+    """
+    def decorator(func):
+        func._is_websocket = True
+        func._ws_path = path
+        func._ws_kwargs = kwargs
+        return func
+    return decorator
