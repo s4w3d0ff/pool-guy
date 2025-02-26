@@ -2,6 +2,7 @@ from .utils import json, asyncio, websockets
 from .utils import MaxSizeDict, ColorLogger, ABC
 from .utils import convert2epoch, abstractmethod
 from .twitchapi import TwitchApi
+from typing import List, Tuple, Any
 
 logger = ColorLogger(__name__)
 
@@ -44,6 +45,7 @@ class TwitchWebsocket:
         logger.warning(f"Websocket connection closed...")
 
     async def run(self, token=None):
+        await self.notification_handler.start()
         if not self.http.user_id:
             await self.http.login(token)
         logger.info(f"Clearing orphaned event subs")
@@ -122,13 +124,46 @@ class TwitchWebsocket:
         """ Adds alert classes to the AlertFactory cache """
         self.notification_handler.register_alert_class(name, obj)
 
+
+#=============================================================================================
+
+class ViewablePriorityQueue(asyncio.PriorityQueue):
+    """
+    A PriorityQueue that allows viewing its contents without removing items.
+    """
+    def __init__(self, maxsize: int = 0) -> None:
+        super().__init__(maxsize=maxsize)
+        # Use a separate list to track items for viewing
+        self._items: List[Tuple[Any, Any]] = []
+
+    async def put(self, item: Tuple[Any, Any]) -> None:
+        """Put an item into the queue and track it in our viewable list."""
+        await super().put(item)
+        self._items.append(item)
+        # Keep items sorted by priority
+        self._items.sort(key=lambda x: x[0])
+
+    async def get(self) -> Tuple[Any, Any]:
+        """Get an item from the queue and remove it from our viewable list."""
+        item = await super().get()
+        self._items.remove(item)
+        return item
+
+    def get_contents(self) -> List[Tuple[Any, Any]]:
+        """Return a list of current items in the queue."""
+        return self._items.copy()  # Return a copy to prevent external modifications
+
+    def __len__(self) -> int:
+        """Return the number of items in the queue."""
+        return len(self._items)
+
 #=============================================================================================
 
 class NotificationHandler:
     def __init__(self, bot, storage):
         self.bot = bot
         self.storage = storage
-        self._queue = asyncio.PriorityQueue()
+        self._queue = ViewablePriorityQueue()
         self._running = False
         self._paused = False
         self._task = None
@@ -137,7 +172,7 @@ class NotificationHandler:
         AlertFactory.register_alert_class(name, obj)
         
     async def _loop(self):
-        logger.warning(f"NotificationHandler._loop started!")
+        logger.debug(f"NotificationHandler._loop started!")
         self._running = True
         while self._running:
             try:
@@ -152,6 +187,9 @@ class NotificationHandler:
                 self._running = False
         logger.warning(f"NotificationHandler._loop stopped!")
 
+    async def start(self):
+        self._task = asyncio.create_task(self._loop())
+                
     async def shutdown(self):
         self._running = False
         self._task.cancel()
@@ -166,7 +204,11 @@ class NotificationHandler:
 
     def resume(self):
         self._paused = False
-    
+
+    def current_queue(self):
+        """Returns a list of current items in the queue without removing them."""
+        return self._queue.get_contents()
+
     async def __call__(self, metadata, payload):
         event = {
             'message_id': metadata["message_id"],
@@ -175,11 +217,9 @@ class NotificationHandler:
             'timestamp': convert2epoch(metadata['message_timestamp'])
         }
         alert = AlertFactory.create_alert(bot=self.bot, **event)
-        if self.storage and alert.store:
+        if self.storage and alert.store and "test_" not in event["message_id"]:
             await self.storage.save_alert(**event)
         if not alert.queue_skip:
-            if not self._running:
-                self._task = asyncio.create_task(self._loop())
             await self._queue.put((alert.priority, alert))
         else:
             asyncio.create_task(alert.process())
@@ -249,7 +289,7 @@ class AlertFactory:
     def register_alert_class(cls, channel, alert_class):
         """Register an alert class for a channel"""
         cls._alert_classes[channel] = alert_class
-        logger.warning(f"AlertFactory._alert_classes[{channel}] = {alert_class}")
+        logger.debug(f"Alert class registered: {channel} = {alert_class}")
 
     @staticmethod
     def create_alert(bot, message_id, channel, data, timestamp):
