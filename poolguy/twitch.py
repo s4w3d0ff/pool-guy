@@ -104,11 +104,6 @@ class TwitchBot:
     async def after_login(self):
         """Use to execute logic after everything is setup and right before we 'self.hold'"""
         pass
-        
-    def register_routes(self):
-        """Use to register app routes from a subclass when the webserver is being setup"""
-        pass
-
 
 
 def command(name=None, aliases=None):
@@ -184,14 +179,12 @@ class CommandBot(TwitchBot):
             if hasattr(attr, '_is_command'):
                 cmd_name = attr._command_name
                 aliases = attr._command_aliases
-                
                 # Register main command
                 self._commands[cmd_name] = {
                     'handler': attr,
                     'help': attr.__doc__ or 'No help available.',
                     'aliases': aliases or []
                 }
-                
                 # Register aliases
                 if aliases:
                     for alias in aliases:
@@ -200,7 +193,6 @@ class CommandBot(TwitchBot):
                             'help': f'Alias for {cmd_name}. {attr.__doc__ or "No help available."}',
                             'aliases': []
                         }
-            
                 logger.info(f"Registered command: {cmd_name} with aliases: {aliases or []}")
 
     async def command_check(self, data):
@@ -227,7 +219,6 @@ class CommandBot(TwitchBot):
         parts = command_text.split()
         command_name = parts[0].lower()
         args = parts[1:] if len(parts) > 1 else []
-
         if command_name in self._commands:
             try:
                 await self._commands[command_name]['handler'](user, channel, args)
