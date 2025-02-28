@@ -135,6 +135,8 @@ class TwitchWebsocket:
         """ Adds alert classes to the AlertFactory cache """
         self.notification_handler.register_alert_class(name, obj)
 
+    async def create_event_sub(self, event, bid=None):
+        await self.http.createEventSub(event, session_id=self._session_id, bid=bid)
 
 #=============================================================================================
 
