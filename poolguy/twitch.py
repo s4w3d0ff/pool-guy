@@ -45,8 +45,7 @@ class TwitchBot:
         self._is_running = True
         self._setup()
         await self.before_login()
-        # start OAuth, websocket connection, and queue
-        self._tasks = await self.ws.run()
+        await self.ws.run()
         await self.after_login()
         if hold:
             await self.hold()
@@ -73,21 +72,11 @@ class TwitchBot:
         await self.start()
 
     async def hold(self):
-        """Hold until something happens, cleanup shutdown, restart if needed"""
-        try:
-            await self.ws._disconnect_event.wait() # wait for ws to disconnect
-        except asyncio.CancelledError: # tasks cancelled, this is fine
-            logger.warning("Bot tasks cancelled")
-        except Exception as e: # unexpected error, complete shutdown
-            logger.error(f"Error in TwitchBot.hold(): {e}")
-        await self.shutdown()
-        if self._is_running: # we shutdown but are still running
-            self.retry_count += 1 # try again?
-            logger.warning(f"WebSocket disconnected. Attempt {self.retry_count} of {self.max_retries}")
-            if self.retry_count <= self.max_retries: # havent hit max retries
-                await self.restart() # start again
-            else:
-                logger.error(f"Max retry attempts ({self.max_retries}) reached. Shutting down permanently.")
+        while self._is_running:
+            try:
+                await asyncio.sleep(1)
+            except:
+                pass
                 
     async def add_task(self, coro, *args, **kwargs):
         """ Adds a task to our list of tasks """
@@ -104,11 +93,6 @@ class TwitchBot:
     async def after_login(self):
         """Use to execute logic after everything is setup and right before we 'self.hold'"""
         pass
-        
-    def register_routes(self):
-        """Use to register app routes from a subclass when the webserver is being setup"""
-        pass
-
 
 
 def command(name=None, aliases=None):
@@ -184,14 +168,12 @@ class CommandBot(TwitchBot):
             if hasattr(attr, '_is_command'):
                 cmd_name = attr._command_name
                 aliases = attr._command_aliases
-                
                 # Register main command
                 self._commands[cmd_name] = {
                     'handler': attr,
                     'help': attr.__doc__ or 'No help available.',
                     'aliases': aliases or []
                 }
-                
                 # Register aliases
                 if aliases:
                     for alias in aliases:
@@ -200,13 +182,12 @@ class CommandBot(TwitchBot):
                             'help': f'Alias for {cmd_name}. {attr.__doc__ or "No help available."}',
                             'aliases': []
                         }
-            
                 logger.info(f"Registered command: {cmd_name} with aliases: {aliases or []}")
 
     async def command_check(self, data):
         """Check if message starts with command prefix, handle command if needed"""
-        if data["source_broadcaster_user_id"]:
-            return
+        if int(data["chatter_user_id"]) == int(self.http.user_id) or data["source_broadcaster_user_id"]:
+            return False
         message = data["message"]["text"]
         if any(message.startswith(prefix) for prefix in self._prefix):
             user = {
@@ -227,7 +208,6 @@ class CommandBot(TwitchBot):
         parts = command_text.split()
         command_name = parts[0].lower()
         args = parts[1:] if len(parts) > 1 else []
-
         if command_name in self._commands:
             try:
                 await self._commands[command_name]['handler'](user, channel, args)

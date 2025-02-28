@@ -6,77 +6,89 @@ from typing import List, Tuple, Any
 
 logger = ColorLogger(__name__)
 
-websocketURL = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=600"
+WSURL = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=600"
 
 class TwitchWebsocket:
     """ Handles EventSub Websocket connection and subscriptions """
-    def __init__(self, bot, channels={"channel.chat.message": [None]}, http=None, *args, **kwargs):
+    def __init__(self, bot, channels=None, max_reconnect=None, http=None, *args, **kwargs):
         self.http = http or TwitchApi(*args, **kwargs)
-        self.channels = channels
+        self.channels = channels or {"channel.chat.message": [None]}
+        self.max_reconnect = max_reconnect or 20
         self.notification_handler = NotificationHandler(bot, self.http.storage)
         self._socket = None
-        self._connected = False
+        self._running = False
         self._session_id = None
-        self._seen_messages = MaxSizeDict(30)
+        self._seen_messages = MaxSizeDict(15)
         self._socket_task = None
-        self._disconnect_event = asyncio.Event()
 
     async def _socket_loop(self):
-        self._socket = await websockets.connect(websocketURL)
-        self._connected = True
-        self._disconnect_event.clear()
-        logger.debug(f"Connecting Websocket: {websocketURL}")
-        while self._connected:
+        reconnect_count = 0
+        while self._running and reconnect_count < self.max_reconnect:
+            logger.info(f"Clearing orphaned event subs")
+            await self.http.unsubAllEvents()
+            # create connection
+            self._socket = await websockets.connect(WSURL)
+            logger.info(f"Connected to twitch websocket: {WSURL}")
+            while self._running:
+                try:
+                    # wait for message
+                    message = await self._socket.recv()
+                except:
+                    # something bad happened
+                    logger.exception(f"_socket.recv:\n")
+                    # break first loop and reconnect if _running
+                    break
+                try:
+                    # handle message
+                    await self.handle_message(json.loads(message))
+                except:
+                    # error in handle_message, still connected
+                    logger.exception(f"handle_message:\n{message}\n")
             try:
-                message = await self._socket.recv()
-                await self.handle_message(message)
-            except websockets.exceptions.ConnectionClosed as e:
-                logger.error(f"WebSocket connection closed: {e}")
-                break
-            except Exception as e:
-                logger.error(f"[socket_loop] {e}")
-                break
-        try:
-            await self._socket.close()
-        except:
-            pass
-        self._connected = False
-        self._disconnect_event.set()
-        logger.warning(f"Websocket connection closed...")
+                # make sure socket is closed
+                await self._socket.close()
+            except:
+                pass
+            self._socket = None
+            # clear session id so we can process another welcome message
+            self._session_id = None
+            logger.error(f"Websocket connection closed...")
+            reconnect_count += 1
+            if self._running:
+                await asyncio.sleep(reconnect_count*5)
 
     async def run(self, token=None):
+        self._running = True
         await self.notification_handler.start()
         if not self.http.user_id:
             await self.http.login(token)
-        logger.info(f"Clearing orphaned event subs")
-        await self.http.unsubAllEvents()
-        if not self._socket_task:
-            self._socket_task = asyncio.create_task(self._socket_loop())
+        self._socket_task = asyncio.create_task(self._socket_loop())
 
     async def close(self):
-        self._connected = False
-        self._socket_task.cancel()
+        self._running = False
         try:
-            await self._socket_task
-        except asyncio.CancelledError:
-            pass
+            await asyncio.wait_for(self._socket_task, timeout=5)
+        except TimeoutError:
+            logger.exception(f"Took too long:\n")
+        self._socket_task = None
         await self.http.shutdown()
         await self.notification_handler.shutdown()
 
     async def handle_session_welcome(self, metadata, payload):
         logger.info(f"Session welcome recieved")
-        if not self._session_id: # incase multiple welcome messages are recieved
-            self._session_id = payload['session']['id']
-            logger.debug(f"{self._session_id = }")
-            # subscribe to init channels
-            for chan in self.channels:
-                if isinstance(self.channels[chan], list):
-                    for i in self.channels[chan]:
-                        await self.http.createEventSub(chan, self._session_id, i)
-                else:
-                    await self.http.createEventSub(chan, self._session_id)
-                await asyncio.sleep(0.2)
-            logger.warning(f"Subscribed websocket to:\n{json.dumps(list(self.channels.keys()), indent=2)}")
+        if self._session_id: # incase multiple welcome messages are recieved
+            return
+        self._session_id = payload['session']['id']
+        logger.debug(f"{self._session_id = }")
+        # subscribe to init channels
+        for chan in self.channels:
+            if isinstance(self.channels[chan], list):
+                for i in self.channels[chan]:
+                    await self.http.createEventSub(chan, self._session_id, i)
+            else:
+                await self.http.createEventSub(chan, self._session_id)
+            await asyncio.sleep(0.2)
+        logger.warning(f"Subscribed websocket to:\n{json.dumps(list(self.channels.keys()), indent=2)}")
 
     async def handle_session_reconnect(self, metadata, payload):
         logger.error("Websocket needs to reconnect")
@@ -101,29 +113,30 @@ class TwitchWebsocket:
                 await new_websocket.close()
 
     async def handle_message(self, message):
-        msg = json.loads(message)
-        meta = msg["metadata"]
-        logger.debug(f"{meta['message_type']}:\n{json.dumps(msg, indent=2)}")
+        meta = message["metadata"]
+        logger.debug(f"{meta['message_type']}:\n{json.dumps(message, indent=2)}")
         if meta["message_id"] not in self._seen_messages:
-            self._seen_messages[meta["message_id"]] = msg
+            self._seen_messages[meta["message_id"]] = message
             match meta["message_type"]:
                 case "session_welcome": 
-                    await self.handle_session_welcome(meta, msg["payload"])
+                    await self.handle_session_welcome(meta, message["payload"])
                 case "session_reconnect": 
-                    await self.handle_session_reconnect(meta, msg["payload"])
+                    await self.handle_session_reconnect(meta, message["payload"])
                 case "notification":
-                    await self.notification_handler(meta, msg["payload"])
+                    await self.notification_handler(meta, message["payload"])
                 case "session_keepalive":
                     pass
                 case "close": 
                     await self.close()
                 case _:
-                    logger.error(f"Unexpected message in socket: [{meta['message_type']}]\n{json.dumps(msg, indent=2)}")
+                    logger.error(f"Unexpected message in socket: [{meta['message_type']}]\n{json.dumps(message, indent=2)}")
 
     def add_alert_class(self, name, obj):
         """ Adds alert classes to the AlertFactory cache """
         self.notification_handler.register_alert_class(name, obj)
 
+    async def create_event_sub(self, event, bid=None):
+        await self.http.createEventSub(event, session_id=self._session_id, bid=bid)
 
 #=============================================================================================
 
