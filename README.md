@@ -33,29 +33,13 @@ pip install git+https://github.com/s4w3d0ff/pool-guy.git
 ### Simple Command Bot:
 ```python
 import asyncio
-from poolguy import CommandBot, Alert, ColorLogger
-from poolguy.twitch import command, rate_limit
+import logging
+from poolguy import CommandBot, Alert, command, rate_limit
 
-logger = ColorLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class ExampleBot(CommandBot):
-    def __init__(self, *args, **kwargs):
-        # Fetch sensitive data from environment variables
-        import os
-        client_id = os.getenv("CLIENT_ID")
-        client_secret = os.getenv("CLIENT_SECRET")
-        if not client_id or not client_secret:
-            raise ValueError("Environment variables CLIENT_ID and CLIENT_SECRET are required")
-        kwargs['client_id'] = client_id
-        kwargs['client_secret'] = client_secret
-        super().__init__(*args, **kwargs)
-
-    async def send_chat(self, message, channel_id=None):
-        r = await self.http.sendChatMessage(message, channel_id)
-        if not r[0]['is_sent']:
-            logger.error(f"Message not sent! Reason: {r[0]['drop_reason']}")
-
     @command(name="hi", aliases=["hello"])
     @rate_limit(calls=1, period=10, warn_cooldown=5)
     async def hi(self, user, channel, args):
@@ -63,7 +47,7 @@ class ExampleBot(CommandBot):
 
     async def my_loop(self):
         logger.warning(f'my_loop started')
-        while self.ws._connected:
+        while self.ws._running:
             await asyncio.sleep(10)
             logger.info(f"loop")
         logger.warning(f'my_loop stopped')
@@ -81,34 +65,39 @@ class ChannelChatMessageAlert(Alert):
     async def process(self):
         logger.debug(f'{self.data}')
         await self.bot.command_check(self.data)
-        logger.info(f'[Chat] {self.data["chatter_user_name"]}: {self.data["message"]["text"]}', 'purple')
+        logger.info(f'[Chat] {self.data["chatter_user_name"]}: {self.data["message"]["text"]}')
 
 
 if __name__ == '__main__':
-    import logging
+    import os
+    from rich.logging import RichHandler
     logging.basicConfig(
-        format="%(asctime)s-%(levelname)s-[%(name)s] %(message)s",
-        datefmt="%I:%M:%S%p",
-        level=logging.INFO
+        format="%(message)s",
+        datefmt="%X",
+        level=logging.INFO,
+        handlers=[RichHandler(rich_tracebacks=True)]
     )
-
-    cfg = {
-      "redirect_uri": "http://localhost:5000/callback",
-      "scopes": [
-        "user:read:chat",
-        "user:write:chat"
-      ]
-      "channels": {"channel.chat.message": None}, 
-      "storage": "json",
-      "browser": {
-        "chrome": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
-      },
-      "max_retries": 30,
-      "retry_delay": 10,
-      "alert_objs": {'channel.chat.message': ChannelChatMessageAlert}
-    }
-
-    bot = ExampleBot(**cfg)
+    bot = ExampleBot(
+        client_id=os.getenv("CLIENT_ID"),
+        client_secret=os.getenv("CLIENT_SECRET"),
+        redirect_uri="http://localhost:5000/callback",
+        scopes=[
+            "user:read:chat",
+            "user:write:chat"
+        ],
+        channels={
+            "channel.chat.message": None
+        }, 
+        storage="json",
+        browser={
+            "chrome": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+        },
+        max_retries=30,
+        retry_delay=10,
+        alert_objs={
+            "channel.chat.message": ChannelChatMessageAlert
+        }
+    )
     asyncio.run(bot.start())
     
 ```
