@@ -1,8 +1,8 @@
-from .utils import aiohttp, asyncio
-from .utils import ColorLogger, urlparse
+from .utils import aiohttp, asyncio, logging
+from .utils import urlparse
 from .oauth import TokenHandler, WebServer, StorageFactory
 
-logger = ColorLogger(__name__)
+logger = logging.getLogger(__name__)
 
 class RequestHandler:
     def __init__(self, client_id=None, client_secret=None, redirect_uri=None, scopes=None, storage=None, browser=None, webserver=None, **kwargs):

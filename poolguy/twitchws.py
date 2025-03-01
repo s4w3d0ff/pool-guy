@@ -1,10 +1,10 @@
-from .utils import json, asyncio, websockets
-from .utils import MaxSizeDict, ColorLogger, ABC
+from .utils import json, asyncio, websockets, logging
+from .utils import MaxSizeDict, ABC
 from .utils import convert2epoch, abstractmethod
 from .twitchapi import TwitchApi
 from typing import List, Tuple, Any
 
-logger = ColorLogger(__name__)
+logger = logging.getLogger(__name__)
 
 WSURL = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=600"
 

@@ -1,7 +1,7 @@
-from .utils import asyncio, os, aiohttp
-from .utils import ColorLogger, urlparse, wraps, web
+from .utils import asyncio, os, aiohttp, logging
+from .utils import urlparse, wraps, web
 
-logger = ColorLogger(__name__)
+logger = logging.getLogger(__name__)
 
 class WebServer:
     def __init__(self, host, port, static_dirs=None, base_dir=None):

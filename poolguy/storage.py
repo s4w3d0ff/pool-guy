@@ -1,8 +1,8 @@
-from .utils import os, json
-from .utils import ColorLogger, ABC, abstractmethod
+from .utils import os, json, logging
+from .utils import ABC, abstractmethod
 from .utils import aioLoadJSON, aioSaveJSON, datetime, timedelta
 
-logger = ColorLogger(__name__)
+logger = logging.getLogger(__name__)
 
 class BaseStorage(ABC):
     @abstractmethod
@@ -136,5 +136,4 @@ class StorageFactory:
                 return FakeStorage(**kwargs)
             case _:
                 logger.error(f"Unknown storage type: {storage_type}!")
-                logger.warning(f"Using 'FakeStorage' instead...")
-                return FakeStorage(**kwargs)
+                return storage_type(**kwargs)

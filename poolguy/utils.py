@@ -20,6 +20,8 @@ import aiohttp
 from aiohttp import web
 from dateutil import parser
 
+logger = logging.getLogger(__name__)
+
 closeBrowser = """
 <!DOCTYPE html>
 <html lang="en">
@@ -32,45 +34,6 @@ closeBrowser = """
 </body>
 </html>
 """
-    
-def ctxt(text, color='white', bg='black', style='n'):
-    s = {
-        'n': 0, #normal
-        'b': 1, #bold
-        'd': 2, #dim
-        'i': 3, #italic
-        'u': 4, #underline
-        'f': 5  #flash
-        }
-    c = {'black': 30,'red': 31,'green': 32,'yellow': 33,'blue': 34,'purple': 35,'cyan': 36,'white': 37}
-    bg_c = {'black': 40,'red': 41,'green': 42,'yellow': 43,'blue': 44,'purple': 45,'cyan': 46,'white': 47}
-    scb = f"\x1b[{s[style]};{c[color]};{bg_c[bg]}m"
-    clear = "\x1b[0m"
-    return f"{scb}{text}{clear}"
-
-class ColorLogger():
-    def __init__(self, name=__name__):
-        self._l = logging.getLogger(name)
-
-    def debug(self, msg, c='cyan', b='black', s='d', *args, **kwargs):
-        self._l.debug(ctxt(msg, c, b, s), *args, **kwargs)
-
-    def info(self, msg, c='green', b='black', s='d', *args, **kwargs):
-        self._l.info(ctxt(msg, c, b, s), *args, **kwargs)
-
-    def warning(self, msg, c='blue', b='black', s='b', *args, **kwargs):
-        self._l.warning(ctxt(msg, c, b, s), *args, **kwargs)
-
-    def warn(self, msg, c='blue', b='black', s='b', *args, **kwargs):
-        self._l.warning(ctxt(msg, c, b, s), *args, **kwargs)
-
-    def error(self, msg, c='yellow', b='black', s='b', *args, **kwargs):
-        self._l.error(ctxt(msg, c, b, s), *args, **kwargs)
-
-    def critical(self, msg, c='red', b='white', s='f', *args, **kwargs):
-        self._l.critical(ctxt(msg, c, b, s), *args, **kwargs)
-
-logger = ColorLogger(__name__)
 
 
 def randString(length=12):

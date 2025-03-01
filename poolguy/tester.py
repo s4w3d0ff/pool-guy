@@ -1,11 +1,10 @@
-from .utils import json, asyncio, aiofiles, aiohttp
-from .utils import randString, datetime, timezone, timedelta
-from .utils import ColorLogger, web
+from .utils import json, asyncio, aiofiles, aiohttp, logging
+from .utils import randString, datetime, timezone, timedelta, web
 from .twitchws import TwitchWebsocket
 from .twitch import CommandBot
 from .webserver import route
 
-logger = ColorLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 test_payloads = {

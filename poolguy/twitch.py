@@ -1,8 +1,8 @@
-from .utils import asyncio, aiofiles, webbrowser, aiohttp, time
-from .utils import ColorLogger, defaultdict, web, wraps
+from .utils import asyncio, aiofiles, webbrowser, aiohttp, time, logging
+from .utils import defaultdict, web, wraps
 from .twitchws import Alert, TwitchWebsocket
 
-logger = ColorLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class TwitchBot:
