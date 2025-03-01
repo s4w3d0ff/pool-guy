@@ -1,8 +1,8 @@
-from .utils import json, os, aiohttp, re, asyncio
-from .utils import ColorLogger, aioLoadJSON, aioSaveJSON, urlencode
+from .utils import json, os, aiohttp, re, asyncio, logging
+from .utils import aioLoadJSON, aioSaveJSON, urlencode
 from .http import RequestHandler
 
-logger = ColorLogger(__name__)
+logger = logging.getLogger(__name__)
 
 apiUrlPrefix = "https://api.twitch.tv/helix"
 emoteEndpoint = "https://static-cdn.jtvnw.net/emoticons/v2/"

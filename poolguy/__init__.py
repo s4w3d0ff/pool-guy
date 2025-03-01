@@ -4,5 +4,4 @@ from .twitchapi import TwitchApi
 from .oauth import TokenHandler
 from .storage import StorageFactory, BaseStorage
 from .webserver import WebServer, route, websocket
-from .utils import ColorLogger
 from .tester import Tester

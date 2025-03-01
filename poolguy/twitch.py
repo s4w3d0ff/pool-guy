@@ -1,8 +1,8 @@
-from .utils import asyncio, aiofiles, webbrowser, aiohttp, time
-from .utils import ColorLogger, defaultdict, web, wraps
+from .utils import asyncio, aiofiles, webbrowser, aiohttp, time, logging
+from .utils import defaultdict, web, wraps
 from .twitchws import Alert, TwitchWebsocket
 
-logger = ColorLogger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class TwitchBot:
@@ -85,7 +85,12 @@ class TwitchBot:
     def add_alert_class(self, name, obj):
         """ Adds alert classes to the AlertFactory cache """
         self.ws.add_alert_class(name, obj)
-        
+
+    async def send_chat(self, message, channel_id=None):
+        r = await self.http.sendChatMessage(message, channel_id)
+        if not r[0]['is_sent']:
+            logger.error(f"Message not sent! {r[0]['drop_reason']}")
+            
     async def before_login(self):
         """Use to execute logic before login"""
         pass

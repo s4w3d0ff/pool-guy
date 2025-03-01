@@ -1,9 +1,9 @@
-from .utils import webbrowser, os, asyncio, aiohttp, time, json
-from .utils import ColorLogger, closeBrowser, urlparse, urlencode, web
+from .utils import webbrowser, os, asyncio, aiohttp, time, json, logging
+from .utils import closeBrowser, urlparse, urlencode, web
 from .webserver import WebServer
 from .storage import StorageFactory
 
-logger = ColorLogger(__name__)
+logger = logging.getLogger(__name__)
 
 tokenEndpoint = "https://id.twitch.tv/oauth2/token"
 oauthEndpoint = "https://id.twitch.tv/oauth2/authorize"
