@@ -11,7 +11,6 @@ A lightweight Twitch bot framework.
 - Priority queue for EventSub notifications
 - Bot command and ratelimit decorators
 - Framework to support multiple storage backends
-- Rate limiting for commands
 
 ## Limitations:
 - Conduit/shards are not implimented
