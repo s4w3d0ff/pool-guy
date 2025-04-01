@@ -1,6 +1,6 @@
-from .utils import asyncio, aiofiles, webbrowser, aiohttp, time, logging
-from .utils import defaultdict, web, wraps
-from .twitchws import Alert, TwitchWebsocket
+from .utils import asyncio, time, logging
+from .utils import defaultdict, wraps
+from .twitchws import TwitchWebsocket
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +99,8 @@ class TwitchBot:
         """Use to execute logic after everything is setup and right before we 'self.hold'"""
         pass
 
-
+#======================================================================================================================
+#======================================================================================================================
 def command(name=None, aliases=None):
     """
     Command decorator to mark methods as bot commands
@@ -156,8 +157,8 @@ def rate_limit(calls=2, period=10, warn_cooldown=5):
             return await func(self, user, channel, args)
         return wrapper
     return decorator
-
-
+#======================================================================================================================
+#======================================================================================================================
 
 class CommandBot(TwitchBot):
     def __init__(self, cmd_prefix=['!', '~'], *args, **kwargs):
