@@ -195,9 +195,10 @@ class NotificationHandler:
                 _, alert = await self._queue.get()
                 await alert.process()
                 self._queue.task_done()
-                await asyncio.sleep(1)
             except asyncio.CancelledError:
                 self._running = False
+            except:
+                logger.exception("NotificationHandler._loop:\n")
         logger.warning(f"NotificationHandler._loop stopped!")
 
     async def start(self):

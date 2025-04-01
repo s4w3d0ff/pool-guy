@@ -28,6 +28,7 @@ apiEndpoints = {
     "conduits": f"{apiUrlPrefix}/eventsub/conduits",
     "shards": f"{apiUrlPrefix}/eventsub/conduits/shards",
     "bits": f"{apiUrlPrefix}/bits/leaderboard",
+    "cheermotes": f"{apiUrlPrefix}/bits/cheermotes",
     "channel_editors": f"{apiUrlPrefix}/channels/editors",
     "channel_emotes": f"{apiUrlPrefix}/chat/emotes",
     "global_emotes": f"{apiUrlPrefix}/chat/emotes/global",
@@ -312,7 +313,12 @@ class TwitchApi(RequestHandler):
             params["started_at"] = started_at
         r = await self._request(method, url, params=params)
         return r['data']
-        
+
+    async def getCheermotes(self, broadcaster_id=None):
+        params = {"broadcaster_id": broadcaster_id or self.user_id}
+        r = await self._request("get", apiEndpoints['cheermotes'], params=params)
+        return r['data']  
+
     #============================================================================
     # Games Methods ================================================================
     async def getTopGames(self, first=None):
@@ -324,7 +330,7 @@ class TwitchApi(RequestHandler):
         if 'cursor' in r['pagination'] and not first:
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
-        
+
     #============================================================================
     # Goals Methods ================================================================
     async def getCreatorGoals(self, broadcaster_id=None):

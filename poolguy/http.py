@@ -1,4 +1,4 @@
-from .utils import aiohttp, asyncio, logging
+from .utils import aiohttp, asyncio, logging, time
 from .utils import urlparse
 from .oauth import TokenHandler, WebServer, StorageFactory
 
@@ -72,12 +72,16 @@ class RequestHandler:
                     case 429:
                         ratelimit_reset = int(response.headers.get('Ratelimit-Reset'))
                         wait_time = ratelimit_reset - int(time.time()) + 3
-                        logger.warning(f"Rate limited, waiting {wait_time}s")
+                        logger.warning(f"Rate limited! [{response.headers["X-Cache"]}] {wait_time = }")
                         await asyncio.sleep(wait_time)
                         return await self._request(method, url, *args, **kwargs)
                 response.raise_for_status()
-                try:
-                    return await response.json()
-                except:
-                    logger.debug(f"Error decoding JSON, returned full response.")
-                    return response
+                match method.lower():
+                    case "get" | "post":
+                        try:
+                            return await response.json()
+                        except:
+                            logger.warning("JSON decode failed. Returned full response!")
+                            return response
+                    case _:
+                        return response
