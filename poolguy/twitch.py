@@ -1,5 +1,8 @@
-from .utils import asyncio, time, logging
-from .utils import defaultdict, wraps
+import asyncio
+import time
+import logging
+from collections import defaultdict
+from functools import wraps
 from .twitchws import TwitchWebsocket
 
 logger = logging.getLogger(__name__)

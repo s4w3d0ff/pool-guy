@@ -1,16 +1,45 @@
-from .utils import webbrowser, os, asyncio, aiohttp, time, json, logging
-from .utils import closeBrowser, urlparse, urlencode, web
+import os
+import webbrowser
+import asyncio
+import aiohttp
+import time
+import json
+import logging
+from urllib.parse import urlparse, urlencode
+from aiohttp import web
 from .webserver import WebServer
 from .storage import StorageFactory
 
 logger = logging.getLogger(__name__)
+
+closeBrowser = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script>function closeWindow() {window.close();};</script>
+</head>
+<body>
+    <button id="closeButton" onclick="closeWindow()">Close Window</button>
+    <script>document.getElementById("closeButton").click();</script>
+</body>
+</html>
+"""
 
 tokenEndpoint = "https://id.twitch.tv/oauth2/token"
 oauthEndpoint = "https://id.twitch.tv/oauth2/authorize"
 validateEndoint = "https://id.twitch.tv/oauth2/validate"
 
 class TokenHandler:
-    def __init__(self, client_id=None, client_secret=None, redirect_uri=None, scopes=None, storage=None, webserver=None, browser=None):
+    def __init__(
+            self, 
+            client_id=None, 
+            client_secret=None, 
+            redirect_uri=None, 
+            scopes=None, 
+            storage=None, 
+            webserver=None, 
+            browser=None
+        ):
         if not client_id or not client_secret:
             raise ValueError(f"Client id and secret required!")
         self.client_id = client_id

@@ -1,5 +1,11 @@
-from .utils import json, os, aiohttp, re, asyncio, logging
-from .utils import aioLoadJSON, aioSaveJSON, urlencode
+import json
+import os
+import aiohttp
+import re
+import asyncio
+import logging
+from urllib.parse import urlencode
+from .storage import aioLoadJSON, aioSaveJSON
 from .http import RequestHandler
 
 logger = logging.getLogger(__name__)
@@ -56,7 +62,7 @@ apiEndpoints = {
 
 eventChannels = None
 
-async def fetch_eventsub_types(dir="eventsub_versions", eventsubdocurl="https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/"):
+async def fetch_eventsub_types(dir="db", eventsubdocurl="https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/"):
     global eventChannels
     filename = f"{dir}/eventsub_types.json"
     if os.path.exists(filename):
