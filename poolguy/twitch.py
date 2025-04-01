@@ -166,6 +166,8 @@ def rate_limit(calls=2, period=10, warn_cooldown=5):
 class CommandBot(TwitchBot):
     def __init__(self, cmd_prefix=['!', '~'], *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if "channel.chat.message" not in self._twitch_config["channels"]:
+            raise ValueError("Not configured to subscribe to channel.chat.message!")
         self._prefix = cmd_prefix
         self._commands = {}
         self._register_commands()
@@ -195,7 +197,7 @@ class CommandBot(TwitchBot):
 
     async def command_check(self, data):
         """Check if message starts with command prefix, handle command if needed"""
-        if int(data["chatter_user_id"]) == int(self.http.user_id) or data["source_broadcaster_user_id"]:
+        if data["source_broadcaster_user_id"]:
             return False
         message = data["message"]["text"]
         if any(message.startswith(prefix) for prefix in self._prefix):
@@ -230,7 +232,7 @@ class CommandBot(TwitchBot):
         else:
             logger.debug(f"Unknown command: {command_name}")
 
-    @command
+    @command("commands", aliases=["help"])
     @rate_limit(calls=1, period=30, warn_cooldown=15)
     async def commands(self, user, channel, args):
         """Shows available commands. Usage: !commands [command]"""
@@ -254,5 +256,5 @@ class CommandBot(TwitchBot):
                 cmd in self._commands[other]['aliases'] 
                 for other in self._commands
             )]
-            help_text = f"Command Prefix: {', '.join(self._prefix)} Commands: {', '.join(main_commands)}"
+            help_text = f"Bot Prefix: [{', '.join(self._prefix)}]  Available Commands: {', '.join(main_commands)}"
         await self.http.sendChatMessage(help_text, broadcaster_id=channel["broadcaster_id"])
