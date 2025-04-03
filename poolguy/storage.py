@@ -1,8 +1,38 @@
-from .utils import os, json, logging
-from .utils import ABC, abstractmethod
-from .utils import aioLoadJSON, aioSaveJSON, datetime, timedelta
+import os
+import json
+import logging
+import aiofiles
+from abc import ABC, abstractmethod
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
+
+def loadJSON(filename):
+    """ Load json file """
+    with open(filename, 'r') as f:
+        out = json.load(f)
+        logger.debug(f"[loadJSON] {filename}")
+        return out
+
+def saveJSON(data, filename, str_fmat=False):
+    """ Save data as json to a file """
+    with open(filename, 'w') as f:
+        json.dump(data, f, indent=4)
+        logger.debug(f"[saveJSON] {filename}")
+
+async def aioUpdateFile(file_path, text):
+    async with aiofiles.open(file_path, "w") as file:
+        await file.write(text)
+        logger.debug(f"[aioUpdateFile] {file_path}")
+
+async def aioLoadJSON(filename):
+    async with aiofiles.open(filename, 'r') as file:
+        content = await file.read()
+        return json.loads(content)
+
+async def aioSaveJSON(data, filename):
+    async with aiofiles.open(filename, 'w') as file:
+        await file.write(json.dumps(data, indent=4))
 
 class BaseStorage(ABC):
     @abstractmethod

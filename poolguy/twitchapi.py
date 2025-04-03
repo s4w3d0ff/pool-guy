@@ -1,5 +1,11 @@
-from .utils import json, os, aiohttp, re, asyncio, logging
-from .utils import aioLoadJSON, aioSaveJSON, urlencode
+import json
+import os
+import aiohttp
+import re
+import asyncio
+import logging
+from urllib.parse import urlencode
+from .storage import aioLoadJSON, aioSaveJSON
 from .http import RequestHandler
 
 logger = logging.getLogger(__name__)
@@ -56,7 +62,7 @@ apiEndpoints = {
 
 eventChannels = None
 
-async def fetch_eventsub_types(dir="eventsub_versions", eventsubdocurl="https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/"):
+async def fetch_eventsub_types(dir="db", eventsubdocurl="https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/"):
     global eventChannels
     filename = f"{dir}/eventsub_types.json"
     if os.path.exists(filename):
@@ -218,6 +224,19 @@ class TwitchApi(RequestHandler):
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
 
+    async def getChannelStreamSchedule(self, broadcaster_id=None, first=None):
+        method = "get"
+        url = apiEndpoints['schedule']
+        params = {"broadcaster_id": broadcaster_id or self.user_id}
+        if first:
+            params["first"] = first
+        r = await self._request(method, url, params=params)
+        out = r['data']
+        if 'cursor' in r['pagination'] and not first:
+            out += await self._continuePage(method, url, r['pagination'], params=params)
+        return out
+
+
     #============================================================================
     # Chat Methods ================================================================
     async def sendChatMessage(self, message, broadcaster_id=None):
@@ -323,13 +342,14 @@ class TwitchApi(RequestHandler):
     # Games Methods ================================================================
     async def getTopGames(self, first=None):
         method = "get"
-        url = apiEndpoints['categories']
+        url = apiEndpoints['categories']+"/top"
         params = {"first": first or 20}
         r = await self._request(method, url, params=params)
         out = r['data']
         if 'cursor' in r['pagination'] and not first:
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
+
 
     #============================================================================
     # Goals Methods ================================================================

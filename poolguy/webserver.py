@@ -1,14 +1,14 @@
-from .utils import asyncio, os, logging
-from .utils import wraps
+import asyncio
+import os
+import logging
+from functools import wraps
 from aiohttp import web
 
 logger = logging.getLogger(__name__)
 
 class WebServer:
     """WebServer class for serving web pages and handling requests."""
-
     def __init__(self, host, port, static_dirs=None, base_dir=None):
-        """Initialize the WebServer with host, port, static directories, and base directory."""
         self.app = web.Application()
         self.host = host
         self.port = port

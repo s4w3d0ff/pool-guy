@@ -1,12 +1,34 @@
-from .utils import json, asyncio, websockets, logging
-from .utils import MaxSizeDict, ABC
-from .utils import convert2epoch, abstractmethod
-from .twitchapi import TwitchApi
+import json
+import asyncio
+import websockets
+import logging
+from abc import ABC, abstractmethod
+from dateutil import parser
+from collections import OrderedDict
 from typing import List, Tuple, Any
+from .twitchapi import TwitchApi
 
 logger = logging.getLogger(__name__)
 
 WSURL = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=600"
+
+def convert2epoch(timestampstr):
+    return parser.parse(timestampstr).timestamp()
+
+class MaxSizeDict(OrderedDict):
+    """ OrderedDict subclass with a 'max_size' which restricts the len. 
+    As items are added, the oldest items are removed to make room. """
+    def __init__(self, max_size):
+        super().__init__()
+        self.max_size = max_size
+    
+    def __setitem__(self, key, value):
+        if key in self:
+            self.move_to_end(key)
+        else:
+            if len(self) >= self.max_size:
+                self.popitem(last=False)
+        super().__setitem__(key, value)
 
 class TwitchWebsocket:
     """ Handles EventSub Websocket connection and subscriptions """
