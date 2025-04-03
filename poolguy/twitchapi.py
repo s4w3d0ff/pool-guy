@@ -224,6 +224,19 @@ class TwitchApi(RequestHandler):
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
 
+    async def getChannelStreamSchedule(self, broadcaster_id=None, first=None):
+        method = "get"
+        url = apiEndpoints['schedule']
+        params = {"broadcaster_id": broadcaster_id or self.user_id}
+        if first:
+            params["first"] = first
+        r = await self._request(method, url, params=params)
+        out = r['data']
+        if 'cursor' in r['pagination'] and not first:
+            out += await self._continuePage(method, url, r['pagination'], params=params)
+        return out
+
+
     #============================================================================
     # Chat Methods ================================================================
     async def sendChatMessage(self, message, broadcaster_id=None):
@@ -329,13 +342,14 @@ class TwitchApi(RequestHandler):
     # Games Methods ================================================================
     async def getTopGames(self, first=None):
         method = "get"
-        url = apiEndpoints['categories']
+        url = apiEndpoints['categories']+"/top"
         params = {"first": first or 20}
         r = await self._request(method, url, params=params)
         out = r['data']
         if 'cursor' in r['pagination'] and not first:
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
+
 
     #============================================================================
     # Goals Methods ================================================================
