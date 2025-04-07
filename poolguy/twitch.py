@@ -4,7 +4,7 @@ import logging
 from collections import defaultdict
 from functools import wraps
 from .twitchws import TwitchWebsocket
-from .webserver import route, web
+from .webserver import route
 
 logger = logging.getLogger(__name__)
 
@@ -334,20 +334,20 @@ class UIBot(TwitchBot):
                 case _:
                     base['data'] = {}
             out.append(base)
-        return web.json_response({"status": True, "data": out})
+        return self.app.response_json({"status": True, "data": out})
 
     @route('/queue/remove/{item_id}')
     async def remove_item_from_queue(self, request):
         item_id = request.match_info['item_id']
         await self.remove_from_queue(item_id)
-        return web.json_response({"status": True, "message": f"Removed item {item_id} from queue"})
+        return self.app.response_json({"status": True, "message": f"Removed item {item_id} from queue"})
 
     @route('/queue/pause')
     async def pause_queue(self, request):
         self.ws.notification_handler.pause()
-        return web.json_response({"status": True, "message": "Queue paused"})
+        return self.app.response_json({"status": True, "message": "Queue paused"})
     
     @route('/queue/resume')
     async def resume_queue(self, request):
         self.ws.notification_handler.resume()
-        return web.json_response({"status": True, "message": "Queue resumed"})
+        return self.app.response_json({"status": True, "message": "Queue resumed"})

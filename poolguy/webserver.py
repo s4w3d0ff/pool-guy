@@ -1,6 +1,7 @@
 import asyncio
 import os
 import logging
+import aiofiles
 from functools import wraps
 from aiohttp import web
 
@@ -63,6 +64,7 @@ class WebServer:
                 self.app.router.add_route(method, path, handler, **kwargs)
         logger.info(f"Added {method} route for {path}")
 
+
     def add_websocket(self, path, handler, **kwargs):
         """Add a new WebSocket endpoint."""
         if self.is_running():
@@ -74,9 +76,16 @@ class WebServer:
             await ws.prepare(request)
             try:
                 await handler(ws, request)
+            except ConnectionResetError:
+                # Handle client disconnect gracefully
+                logger.debug(f"Client disconnected from WebSocket at {path}")
             except Exception as e:
                 logger.error(f"{path} WebSocket handler error: {e}")
             finally:
+                try:
+                    await ws.close()
+                except Exception:
+                    pass
                 return ws
 
         self.ws_handlers[path] = {
@@ -117,6 +126,14 @@ class WebServer:
         await self.stop()
         await self.start()
         logger.info("Server restarted.")
+
+    async def response_html(self, file_path):
+        async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+            template = await f.read()
+            return web.Response(text=template, content_type='text/html', charset='utf-8')
+    
+    def response_json(self, data):
+        return web.json_response(data)
 
 def route(path, method='GET', **kwargs):
     """
