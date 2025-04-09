@@ -2,10 +2,11 @@ import json
 import asyncio
 import websockets
 import logging
+import uuid
 from abc import ABC, abstractmethod
 from dateutil import parser
 from collections import OrderedDict
-from typing import List, Tuple, Any
+from typing import Any, List, Tuple, Dict
 from .twitchapi import TwitchApi
 
 logger = logging.getLogger(__name__)
@@ -15,6 +16,226 @@ WSURL = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=600"
 def convert2epoch(timestampstr):
     return parser.parse(timestampstr).timestamp()
 
+class Alert(ABC):
+    queue_skip = False
+    store = True
+    priority = 3
+    
+    def __init__(self, bot, message_id, channel, data, timestamp):
+        self.bot = bot
+        self.message_id = message_id
+        self.channel = channel
+        self.data = data
+        self.timestamp = timestamp
+
+    @abstractmethod
+    async def process(self):
+        pass
+
+    def __lt__(self, other):
+        if self.priority != other.priority:
+            return self.priority < other.priority
+        return self.timestamp < other.timestamp
+
+    def __le__(self, other):
+        if self.priority != other.priority:
+            return self.priority <= other.priority
+        return self.timestamp <= other.timestamp
+
+    def __gt__(self, other):
+        if self.priority != other.priority:
+            return self.priority > other.priority
+        return self.timestamp > other.timestamp
+
+    def __ge__(self, other):
+        if self.priority != other.priority:
+            return self.priority >= other.priority
+        return self.timestamp >= other.timestamp
+
+    def __eq__(self, other):
+        if not isinstance(other, Alert):
+            return NotImplemented
+        return (self.priority == other.priority and 
+                self.timestamp == other.timestamp and 
+                self.message_id == other.message_id)
+
+
+class GenericAlert(Alert):
+    """Generic alert class for handling unknown alert types."""
+    queue_skip = True
+    priority = 4
+    
+    async def process(self):
+        logger.warning(f"Processing generic alert for {self.channel} -> {self.message_id}")
+        logger.debug(f"Data: {self.data}")
+
+
+class AlertFactory:
+    """Factory class to create the appropriate Alert instance based on event type."""
+    _alert_classes = {}
+
+    @classmethod
+    def register_alert_class(cls, channel, alert_class):
+        """Register an alert class for a channel"""
+        cls._alert_classes[channel] = alert_class
+        logger.debug(f"Alert class registered: {channel} = {alert_class}")
+
+    @staticmethod
+    def create_alert(bot, message_id, channel, data, timestamp):
+        """Create an appropriate Alert instance based on the alert type."""
+        if channel in AlertFactory._alert_classes:
+            return AlertFactory._alert_classes[channel](bot, message_id, channel, data, timestamp)
+        else:
+            logger.error(f"No Alert Class found for {channel}")
+            return GenericAlert(bot, message_id, channel, data, timestamp)
+
+#=============================================================================================
+
+class ViewablePriorityQueue(asyncio.PriorityQueue):
+    """
+    A PriorityQueue that allows viewing and removing specific items using unique identifiers.
+    """
+    def __init__(self, maxsize: int = 0) -> None:
+        super().__init__(maxsize=maxsize)
+        # Use a separate list to track items for viewing
+        self._items: List[Tuple[Any, Any, str]] = []
+        # Dictionary to map identifiers to items for quick lookup
+        self._id_map: Dict[str, Tuple[Any, Any, str]] = {}
+
+    async def put(self, item: Tuple[Any, Any]) -> str:
+        """
+        Put an item into the queue and track it in our viewable list.
+        Returns the unique identifier assigned to the item.
+        """
+        # Generate a unique identifier
+        item_id = str(uuid.uuid4())
+        # Create an enhanced item with the identifier
+        enhanced_item = (item[0], item[1], item_id)
+        
+        await super().put(enhanced_item)
+        self._items.append(enhanced_item)
+        self._id_map[item_id] = enhanced_item
+        # Keep items sorted by priority
+        self._items.sort(key=lambda x: x[0])
+        
+        return item_id
+
+    async def get(self) -> Tuple[Any, Any]:
+        """Get an item from the queue and remove it from our viewable list."""
+        enhanced_item = await super().get()
+        self._items.remove(enhanced_item)
+        # Only remove from id_map if it exists (might have been removed by remove_by_id)
+        self._id_map.pop(enhanced_item[2], None)  # None as default prevents KeyError
+        # Return the original item format (priority, value) without the ID
+        return (enhanced_item[0], enhanced_item[1])
+
+    def get_contents(self) -> List[Tuple[Any, Any, str]]:
+        """Return a list of current items in the queue, including their IDs."""
+        return self._items.copy()  # Return a copy to prevent external modifications
+
+    async def remove_by_id(self, item_id: str) -> bool:
+        """
+        Remove a specific item from the queue using its identifier.
+        Returns True if the item was found and removed, False otherwise.
+        """
+        if item_id not in self._id_map:
+            return False
+
+        item_to_remove = self._id_map.pop(item_id)  # Remove from id_map first
+        
+        # Since we're tracking items in self._items, we can use that
+        self._items = [item for item in self._items if item != item_to_remove]
+        
+        # Clear the current queue and rebuild it
+        temp_items = []
+        while not self.empty():
+            item = await super().get()  # Get without updating tracking structures
+            if item != item_to_remove:
+                temp_items.append(item)
+        
+        # Put back all items except the one we want to remove
+        for item in temp_items:
+            await super().put(item)
+        
+        return True
+
+    def __len__(self) -> int:
+        """Return the number of items in the queue."""
+        return len(self._items)
+
+#=============================================================================================
+class NotificationHandler:
+    def __init__(self, bot, storage):
+        self.bot = bot
+        self.storage = storage
+        self._queue = ViewablePriorityQueue()
+        self._running = False
+        self._paused = False
+        self._task = None
+
+    def register_alert_class(self, name, obj):
+        AlertFactory.register_alert_class(name, obj)
+        
+    async def _loop(self):
+        logger.debug(f"NotificationHandler._loop started!")
+        self._running = True
+        while self._running:
+            try:
+                if self._paused:
+                    await asyncio.sleep(1)
+                    continue
+                _, alert = await self._queue.get()
+                await alert.process()
+                self._queue.task_done()
+            except asyncio.CancelledError:
+                self._running = False
+            except:
+                logger.exception("NotificationHandler._loop:\n")
+        logger.warning(f"NotificationHandler._loop stopped!")
+
+    async def start(self):
+        self._task = asyncio.create_task(self._loop())
+                
+    async def shutdown(self):
+        self._running = False
+        self._task.cancel()
+        try:
+            await self._task
+        except asyncio.CancelledError:
+            pass
+        self._task = None
+
+    def pause(self):
+        self._paused = True
+
+    def resume(self):
+        self._paused = False
+
+    def current_queue(self):
+        """Returns a list of current items in the queue without removing them."""
+        return self._queue.get_contents()
+    
+    async def remove_from_queue(self, item_id):
+        """Removes an item from the queue by its message_id."""
+        await self._queue.remove_by_id(item_id)
+
+    async def __call__(self, metadata, payload):
+        event = {
+            'message_id': metadata["message_id"],
+            'channel': payload['subscription']['type'],
+            'data': payload['event'],
+            'timestamp': convert2epoch(metadata['message_timestamp'])
+        }
+        alert = AlertFactory.create_alert(bot=self.bot, **event)
+        if self.storage and alert.store and "test_" not in event["message_id"]:
+            await self.storage.save_alert(**event)
+        if not alert.queue_skip:
+            await self._queue.put((alert.priority, alert))
+        else:
+            asyncio.create_task(alert.process())
+
+
+#=============================================================================================
 class MaxSizeDict(OrderedDict):
     """ OrderedDict subclass with a 'max_size' which restricts the len. 
     As items are added, the oldest items are removed to make room. """
@@ -30,6 +251,7 @@ class MaxSizeDict(OrderedDict):
                 self.popitem(last=False)
         super().__setitem__(key, value)
 
+#========================================================================================
 class TwitchWebsocket:
     """ Handles EventSub Websocket connection and subscriptions """
     def __init__(self, bot, channels=None, max_reconnect=None, http=None, *args, **kwargs):
@@ -145,7 +367,7 @@ class TwitchWebsocket:
                 case "session_reconnect": 
                     await self.handle_session_reconnect(meta, message["payload"])
                 case "notification":
-                    await self.notification_handler(meta, message["payload"])
+                    asyncio.create_task(self.notification_handler(meta, message["payload"]))
                 case "session_keepalive":
                     pass
                 case "close": 
@@ -159,179 +381,3 @@ class TwitchWebsocket:
 
     async def create_event_sub(self, event, bid=None):
         await self.http.createEventSub(event, session_id=self._session_id, bid=bid)
-
-#=============================================================================================
-
-class ViewablePriorityQueue(asyncio.PriorityQueue):
-    """
-    A PriorityQueue that allows viewing its contents without removing items.
-    """
-    def __init__(self, maxsize: int = 0) -> None:
-        super().__init__(maxsize=maxsize)
-        # Use a separate list to track items for viewing
-        self._items: List[Tuple[Any, Any]] = []
-
-    async def put(self, item: Tuple[Any, Any]) -> None:
-        """Put an item into the queue and track it in our viewable list."""
-        await super().put(item)
-        self._items.append(item)
-        # Keep items sorted by priority
-        self._items.sort(key=lambda x: x[0])
-
-    async def get(self) -> Tuple[Any, Any]:
-        """Get an item from the queue and remove it from our viewable list."""
-        item = await super().get()
-        self._items.remove(item)
-        return item
-
-    def get_contents(self) -> List[Tuple[Any, Any]]:
-        """Return a list of current items in the queue."""
-        return self._items.copy()  # Return a copy to prevent external modifications
-
-    def __len__(self) -> int:
-        """Return the number of items in the queue."""
-        return len(self._items)
-
-#=============================================================================================
-
-class NotificationHandler:
-    def __init__(self, bot, storage):
-        self.bot = bot
-        self.storage = storage
-        self._queue = ViewablePriorityQueue()
-        self._running = False
-        self._paused = False
-        self._task = None
-
-    def register_alert_class(self, name, obj):
-        AlertFactory.register_alert_class(name, obj)
-        
-    async def _loop(self):
-        logger.debug(f"NotificationHandler._loop started!")
-        self._running = True
-        while self._running:
-            try:
-                if self._paused:
-                    await asyncio.sleep(1)
-                    continue
-                _, alert = await self._queue.get()
-                await alert.process()
-                self._queue.task_done()
-            except asyncio.CancelledError:
-                self._running = False
-            except:
-                logger.exception("NotificationHandler._loop:\n")
-        logger.warning(f"NotificationHandler._loop stopped!")
-
-    async def start(self):
-        self._task = asyncio.create_task(self._loop())
-                
-    async def shutdown(self):
-        self._running = False
-        self._task.cancel()
-        try:
-            await self._task
-        except asyncio.CancelledError:
-            pass
-        self._task = None
-
-    def pause(self):
-        self._paused = True
-
-    def resume(self):
-        self._paused = False
-
-    def current_queue(self):
-        """Returns a list of current items in the queue without removing them."""
-        return self._queue.get_contents()
-
-    async def __call__(self, metadata, payload):
-        event = {
-            'message_id': metadata["message_id"],
-            'channel': payload['subscription']['type'],
-            'data': payload['event'],
-            'timestamp': convert2epoch(metadata['message_timestamp'])
-        }
-        alert = AlertFactory.create_alert(bot=self.bot, **event)
-        if self.storage and alert.store and "test_" not in event["message_id"]:
-            await self.storage.save_alert(**event)
-        if not alert.queue_skip:
-            await self._queue.put((alert.priority, alert))
-        else:
-            asyncio.create_task(alert.process())
-
-
-#=============================================================================================
-
-class Alert(ABC):
-    queue_skip = False
-    store = True
-    priority = 3
-    
-    def __init__(self, bot, message_id, channel, data, timestamp):
-        self.bot = bot
-        self.message_id = message_id
-        self.channel = channel
-        self.data = data
-        self.timestamp = timestamp
-
-    @abstractmethod
-    async def process(self):
-        pass
-
-    def __lt__(self, other):
-        if self.priority != other.priority:
-            return self.priority < other.priority
-        return self.timestamp < other.timestamp
-
-    def __le__(self, other):
-        if self.priority != other.priority:
-            return self.priority <= other.priority
-        return self.timestamp <= other.timestamp
-
-    def __gt__(self, other):
-        if self.priority != other.priority:
-            return self.priority > other.priority
-        return self.timestamp > other.timestamp
-
-    def __ge__(self, other):
-        if self.priority != other.priority:
-            return self.priority >= other.priority
-        return self.timestamp >= other.timestamp
-
-    def __eq__(self, other):
-        if not isinstance(other, Alert):
-            return NotImplemented
-        return (self.priority == other.priority and 
-                self.timestamp == other.timestamp and 
-                self.message_id == other.message_id)
-
-
-class GenericAlert(Alert):
-    """Generic alert class for handling unknown alert types."""
-    queue_skip = True
-    priority = 4
-    
-    async def process(self):
-        logger.warning(f"Processing generic alert for {self.channel} -> {self.message_id}")
-        logger.debug(f"Data: {self.data}")
-
-
-class AlertFactory:
-    """Factory class to create the appropriate Alert instance based on event type."""
-    _alert_classes = {}
-
-    @classmethod
-    def register_alert_class(cls, channel, alert_class):
-        """Register an alert class for a channel"""
-        cls._alert_classes[channel] = alert_class
-        logger.debug(f"Alert class registered: {channel} = {alert_class}")
-
-    @staticmethod
-    def create_alert(bot, message_id, channel, data, timestamp):
-        """Create an appropriate Alert instance based on the alert type."""
-        if channel in AlertFactory._alert_classes:
-            return AlertFactory._alert_classes[channel](bot, message_id, channel, data, timestamp)
-        else:
-            logger.error(f"No Alert Class found for {channel}")
-            return GenericAlert(bot, message_id, channel, data, timestamp)
