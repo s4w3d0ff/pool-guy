@@ -184,9 +184,11 @@ class NotificationHandler:
                 if self._paused:
                     await asyncio.sleep(1)
                     continue
-                _, alert = await self._queue.get()
+                _, alert = await asyncio.wait_for(self._queue.get(), timeout=1)
                 await alert.process()
                 self._queue.task_done()
+            except asyncio.TimeoutError:
+                pass
             except asyncio.CancelledError:
                 self._running = False
             except:
@@ -213,7 +215,7 @@ class NotificationHandler:
 
     def current_queue(self):
         """Returns a list of current items in the queue without removing them."""
-        return self._queue.get_contents()
+        return self._queue.get_contents(), self._paused
     
     async def remove_from_queue(self, item_id):
         """Removes an item from the queue by its message_id."""

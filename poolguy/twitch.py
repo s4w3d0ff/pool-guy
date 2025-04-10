@@ -272,7 +272,7 @@ class UIBot(TwitchBot):
     """Adds a series of routes to serve as the base for an UI """
     @route('/queue/current')
     async def current_queue(self, request):
-        q = await self.get_alert_queue()
+        q, paused = await self.get_alert_queue()
         out = []
         for pri, obj, item_id in q:
             base = {
@@ -283,58 +283,40 @@ class UIBot(TwitchBot):
             match obj.channel:
                 case "channel.channel_points_custom_reward_redemption.add":
                     base['channel'] = "Channel Points"
-                    base['user_name'] = obj.data['user_name'] # user who redeemed the reward str
+                    base['user_name'] = obj.data['user_name']
                     base['data'] = obj.data['reward']
                 case "channel.follow":
                     base['channel'] = "Follow"
-                    base['user_name'] = obj.data['user_name'] # user who followed str
+                    base['user_name'] = obj.data['user_name']
                     base['data'] = {}
-                case "channel.cheer":
-                    base['channel'] = "Cheer"
-                    base['user_name'] = obj.data['user_name'] # user who cheered str
-                    base['data'] = {
-                        "bits": obj.data['bits'] # number of bits cheered int
-                    }
-                case "channel.subscription.gift":
-                    base['channel'] = "Subscription Gift"
-                    base['user_name'] = obj.data['user_name'] # user who gifted the subscription str
-                    base['data'] = {
-                        "tier": obj.data['tier'], # tier of the subscription str
-                        "total": obj.data['total'] # total number of subscriptions gifted int
-                    }
-                case "channel.subscription.message":
-                    base['channel'] = "Subscription Message"
-                    base['user_name'] = obj.data['user_name'] # user who sent the subscription message str
-                    base['data'] = {
-                        "tier": obj.data['tier'], # tier of the subscription str
-                        "cumulative_months": obj.data['cumulative_months'], # cumulative months of subscription int
-                        "message": obj.data['message']['text'] # message text str
-                    }
-                case "channel.subscribe":
-                    base['channel'] = "Subscribe"
-                    base['user_name'] = obj.data['user_name'] # user who subscribed str
-                    base['data'] = {
-                        "tier": obj.data['tier'], # tier of the subscription str
-                        "is_gift": obj.data['is_gift'] # whether the subscription is a gift bool
-                    }
                 case "channel.bits.use":
                     base['channel'] = "Bits Use"
-                    base['user_name'] = obj.data['user_name'] # user who used bits str
+                    base['user_name'] = obj.data['user_name']
                     base['data'] = {
-                        "bits": obj.data['bits'], # number of bits used int
-                        "type": obj.data['type'], # type of bits use str
-                        "message": obj.data['message']['text'] # message text str
+                        "bits": obj.data['bits'],
+                        "type": obj.data['type'],
+                        "message": obj.data['message']['text']
                     }
                 case "channel.raid":
                     base['channel'] = "Raid"
-                    base['user_name'] = obj.data['from_broadcaster_user_name'] # user who raided str
+                    base['user_name'] = obj.data['from_broadcaster_user_name']
+                    base['data'] = {"viewers": obj.data['viewers']}
+                case "channel.chat.notification":
+                    base['channel'] = obj.data['notice_type']
+                    base['user_name'] = obj.data['user_name']
+                    base['data'] = obj.data[obj.data['notice_type']]
+                case "channel.ban":
+                    base['channel'] = "Ban"
+                    base['user_name'] = obj.data['user_name']
                     base['data'] = {
-                        "viewers": obj.data['viewers'] # number of viewers in the raid int
-                    }
+                        "moderator_user_name": obj.data['moderator_user_name'],
+                        "reason": obj.data['reason'],
+                        "is_permanent": obj.data['is_permanent'],
+                        }
                 case _:
                     base['data'] = {}
             out.append(base)
-        return self.app.response_json({"status": True, "data": out})
+        return self.app.response_json({"status": True, "data": out, "paused": paused})
 
     @route('/queue/remove/{item_id}')
     async def remove_item_from_queue(self, request):
