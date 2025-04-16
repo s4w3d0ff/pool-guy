@@ -1,4 +1,5 @@
 import json
+import copy
 import asyncio
 import websockets
 import logging
@@ -6,8 +7,10 @@ import uuid
 from abc import ABC, abstractmethod
 from dateutil import parser
 from collections import OrderedDict
-from typing import Any, List, Tuple, Dict
+from typing import List, Tuple, Dict, Any, Optional
 from .twitchapi import TwitchApi
+from .storage import BaseStorage
+
 
 logger = logging.getLogger(__name__)
 
@@ -21,17 +24,35 @@ class Alert(ABC):
     store = True
     priority = 3
     
-    def __init__(self, bot, message_id, channel, data, timestamp):
+    def __init__(
+            self, 
+            bot: 'TwitchBot', # type: ignore
+            message_id: str, 
+            channel: str, 
+            data: Any, 
+            timestamp: float
+        ):
         self.bot = bot
         self.message_id = message_id
         self.channel = channel
-        self.data = data
+        self.data = copy.deepcopy(data)
         self.timestamp = timestamp
 
     @abstractmethod
     async def process(self):
         pass
 
+    def to_dict(self):
+        return {
+            'message_id': self.message_id,
+            'channel': self.channel,
+            'data': copy.deepcopy(self.data),
+            'timestamp': self.timestamp,
+            'priority': self.priority,
+            'queue_skip': self.queue_skip,
+            'store': self.store
+        }
+    
     def __lt__(self, other):
         if self.priority != other.priority:
             return self.priority < other.priority
@@ -90,85 +111,117 @@ class AlertFactory:
             return GenericAlert(bot, message_id, channel, data, timestamp)
 
 #=============================================================================================
-
-class ViewablePriorityQueue(asyncio.PriorityQueue):
+class AlertPriorityQueue(asyncio.PriorityQueue):
     """
-    A PriorityQueue that allows viewing and removing specific items using unique identifiers.
+    A PriorityQueue that allows viewing and removing specific alerts using unique identifiers.
+    Can optionally persist its state to JSON storage.
     """
-    def __init__(self, maxsize: int = 0) -> None:
+    def __init__(self, maxsize: int = 0, storage: Optional['BaseStorage'] = None) -> None:
         super().__init__(maxsize=maxsize)
-        # Use a separate list to track items for viewing
-        self._items: List[Tuple[Any, Any, str]] = []
-        # Dictionary to map identifiers to items for quick lookup
-        self._id_map: Dict[str, Tuple[Any, Any, str]] = {}
+        self._id_map: Dict[str, Tuple[int, 'Alert']] = {}  # Maps alert_id to (priority, alert)
+        self.storage = storage
 
-    async def put(self, item: Tuple[Any, Any]) -> str:
+    async def _load_state(self, bot: 'TwitchBot') -> None: #type: ignore
+        if self.storage is None:
+            logger.warning("No storage configured for AlertPriorityQueue.")
+            return False
+
+        saved_items = await self.storage.load_queue()
+        if not saved_items:
+            return
+
+        # Remove all current items from the queue and id_map
+        while not self.empty():
+            await super().get()
+        self._id_map.clear()
+
+        # Restore saved items
+        for _alert in saved_items:
+            alert = AlertFactory.create_alert(
+                bot,
+                _alert["message_id"],
+                _alert["channel"],
+                _alert["data"],
+                _alert["timestamp"],
+            )
+            alert_id = str(uuid.uuid4())
+            item = (alert.priority, alert)
+            await super().put(item)
+            self._id_map[alert_id] = item
+
+    async def _save_state(self) -> None:
+        if self.storage:
+            await self.storage.save_queue(
+                [alert.to_dict() for _, alert in self._id_map.values()]
+            )
+
+    async def put(self, alert: 'Alert') -> str:
         """
-        Put an item into the queue and track it in our viewable list.
+        Put an item into the queue and track it in our ID map.
         Returns the unique identifier assigned to the item.
         """
-        # Generate a unique identifier
-        item_id = str(uuid.uuid4())
-        # Create an enhanced item with the identifier
-        enhanced_item = (item[0], item[1], item_id)
-        
-        await super().put(enhanced_item)
-        self._items.append(enhanced_item)
-        self._id_map[item_id] = enhanced_item
-        # Keep items sorted by priority
-        self._items.sort(key=lambda x: x[0])
-        
-        return item_id
+        alert_id = str(uuid.uuid4())
+        item = (alert.priority, alert)
+        await super().put(item)
+        self._id_map[alert_id] = item
+        await self._save_state()
+        return alert_id
 
-    async def get(self) -> Tuple[Any, Any]:
-        """Get an item from the queue and remove it from our viewable list."""
-        enhanced_item = await super().get()
-        self._items.remove(enhanced_item)
-        # Only remove from id_map if it exists (might have been removed by remove_by_id)
-        self._id_map.pop(enhanced_item[2], None)  # None as default prevents KeyError
-        # Return the original item format (priority, value) without the ID
-        return (enhanced_item[0], enhanced_item[1])
+    async def get(self) -> Tuple[str, 'Alert']:
+        """
+        Get an item from the queue and remove it from our ID map.
+        Returns (alert_id, alert)
+        """
+        priority, alert = await super().get()
+        # Find the alert_id corresponding to this alert instance and priority
+        found_id = None
+        for key, value in self._id_map.items():
+            if value == (priority, alert):
+                found_id = key
+                break
+        if found_id:
+            del self._id_map[found_id]
+        await self._save_state()
+        return found_id, alert
 
-    def get_contents(self) -> List[Tuple[Any, Any, str]]:
-        """Return a list of current items in the queue, including their IDs."""
-        return self._items.copy()  # Return a copy to prevent external modifications
-
-    async def remove_by_id(self, item_id: str) -> bool:
+    async def remove_by_id(self, alert_id: str) -> bool:
         """
         Remove a specific item from the queue using its identifier.
         Returns True if the item was found and removed, False otherwise.
         """
-        if item_id not in self._id_map:
+        if alert_id not in self._id_map:
             return False
 
-        item_to_remove = self._id_map.pop(item_id)  # Remove from id_map first
-        
-        # Since we're tracking items in self._items, we can use that
-        self._items = [item for item in self._items if item != item_to_remove]
-        
-        # Clear the current queue and rebuild it
+        item_to_remove = self._id_map.pop(alert_id)
+
+        # Rebuild the queue without the removed item
         temp_items = []
         while not self.empty():
-            item = await super().get()  # Get without updating tracking structures
+            item = await super().get()
             if item != item_to_remove:
                 temp_items.append(item)
-        
-        # Put back all items except the one we want to remove
         for item in temp_items:
             await super().put(item)
-        
+        await self._save_state()
         return True
 
+    def get_contents(self) -> List[Dict[str, Any]]:
+        """Return a list of current items in the queue as dictionaries."""
+        # This will return alerts in arbitrary order, but always by id
+        return [
+            {"item_id": alert_id, **alert.to_dict()}
+            for alert_id, (_, alert) in self._id_map.items()
+        ]
+
     def __len__(self) -> int:
-        """Return the number of items in the queue."""
-        return len(self._items)
+        return len(self._id_map)
 
 #=============================================================================================
 class NotificationHandler:
     def __init__(self, bot, storage):
         self.bot = bot
         self.storage = storage
-        self._queue = ViewablePriorityQueue()
+        self._queue = AlertPriorityQueue(storage=self.storage)
         self._running = False
         self._paused = False
         self._task = None
@@ -195,7 +248,12 @@ class NotificationHandler:
                 logger.exception("NotificationHandler._loop:\n")
         logger.warning(f"NotificationHandler._loop stopped!")
 
-    async def start(self):
+    async def start(self, paused=False):
+        if paused:
+            self._paused = True
+        # attempt to load state from storage
+        await self._queue._load_state(self.bot)
+        # start the main loop
         self._task = asyncio.create_task(self._loop())
                 
     async def shutdown(self):
@@ -228,11 +286,11 @@ class NotificationHandler:
             'data': payload['event'],
             'timestamp': convert2epoch(metadata['message_timestamp'])
         }
-        alert = AlertFactory.create_alert(bot=self.bot, **event)
+        alert = AlertFactory.create_alert(bot=self.bot, **event.copy())
         if self.storage and alert.store and "test_" not in event["message_id"]:
             await self.storage.save_alert(**event)
         if not alert.queue_skip:
-            await self._queue.put((alert.priority, alert))
+            await self._queue.put(alert)
         else:
             asyncio.create_task(alert.process())
 
@@ -264,7 +322,7 @@ class TwitchWebsocket:
         self._socket = None
         self._running = False
         self._session_id = None
-        self._seen_messages = MaxSizeDict(15)
+        self._seen_messages = MaxSizeDict(15) # shouldnt have to save more than this
         self._socket_task = None
 
     async def _socket_loop(self):
@@ -303,9 +361,9 @@ class TwitchWebsocket:
             if self._running:
                 await asyncio.sleep(reconnect_count*5)
 
-    async def run(self, token=None):
+    async def run(self, token=None, paused=False):
         self._running = True
-        await self.notification_handler.start()
+        await self.notification_handler.start(paused=paused)
         if not self.http.user_id:
             await self.http.login(token)
         self._socket_task = asyncio.create_task(self._socket_loop())

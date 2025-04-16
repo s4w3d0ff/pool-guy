@@ -3,7 +3,7 @@ import json
 import logging
 import aiofiles
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,14 @@ class BaseStorage(ABC):
     async def load_token(self, name):
         pass
 
+    @abstractmethod
+    async def save_queue(self, queue_data):
+        pass
+
+    @abstractmethod
+    async def load_queue(self):
+        pass
+
 #==================================================================
 #==================================================================
 class JSONStorage(BaseStorage):
@@ -64,7 +72,7 @@ class JSONStorage(BaseStorage):
         # Create alerts directory
         self.alert_dir = os.path.join(self.storage_dir, "alerts")
         os.makedirs(self.alert_dir, exist_ok=True)
-        self.today = datetime.utcnow().date()
+        self.today = datetime.now(timezone.utc).date()
 
     async def save_token(self, token, name=''):
         """ Saves OAuth token to database"""
@@ -98,6 +106,18 @@ class JSONStorage(BaseStorage):
         if not os.path.exists(file_path):
             logger.warning(f"No alerts found at {file_path}")
             return {}
+        return await aioLoadJSON(file_path)
+    
+    async def save_queue(self, queue_data):
+        file_path = os.path.join(self.storage_dir, "queue.json")
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        await aioSaveJSON(queue_data, file_path)
+
+    async def load_queue(self):
+        file_path = os.path.join(self.storage_dir, "queue.json")
+        if not os.path.exists(file_path):
+            logger.warning(f"No queue found at {file_path}")
+            return []
         return await aioLoadJSON(file_path)
 
 #==================================================================

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import time
 import logging
 from collections import defaultdict
@@ -45,11 +46,11 @@ class TwitchBot:
             if hasattr(attr, '_is_websocket'):
                 self.app.add_websocket(attr._ws_path, attr, **attr._ws_kwargs)
                 
-    async def start(self, hold=True):
+    async def start(self, hold=True, paused=False):
         self._is_running = True
         self._setup()
         await self.before_login()
-        await self.ws.run()
+        await self.ws.run(paused=paused)
         await self.after_login()
         if hold:
             await self.hold()
@@ -167,6 +168,7 @@ def rate_limit(calls=2, period=10, warn_cooldown=5):
             return await func(self, user, channel, args)
         return wrapper
     return decorator
+
 #======================================================================================================================
 #======================================================================================================================
 
@@ -270,53 +272,11 @@ class CommandBot(TwitchBot):
 #======================================================================================================================
 class UIBot(TwitchBot):
     """Adds a series of routes to serve as the base for an UI """
+
     @route('/queue/current')
     async def current_queue(self, request):
-        q, paused = await self.get_alert_queue()
-        out = []
-        for pri, obj, item_id in q:
-            base = {
-                "priority": pri, # priority level of the alert int
-                "item_id": item_id, # id of the item in the database str
-                "timestamp": obj.timestamp # timestamp of the alert datetime epoch int
-            }
-            match obj.channel:
-                case "channel.channel_points_custom_reward_redemption.add":
-                    base['channel'] = "Channel Points"
-                    base['user_name'] = obj.data['user_name']
-                    base['data'] = obj.data['reward']
-                case "channel.follow":
-                    base['channel'] = "Follow"
-                    base['user_name'] = obj.data['user_name']
-                    base['data'] = {}
-                case "channel.bits.use":
-                    base['channel'] = "Bits Use"
-                    base['user_name'] = obj.data['user_name']
-                    base['data'] = {
-                        "bits": obj.data['bits'],
-                        "type": obj.data['type'],
-                        "message": obj.data['message']['text']
-                    }
-                case "channel.raid":
-                    base['channel'] = "Raid"
-                    base['user_name'] = obj.data['from_broadcaster_user_name']
-                    base['data'] = {"viewers": obj.data['viewers']}
-                case "channel.chat.notification":
-                    base['channel'] = obj.data['notice_type']
-                    base['user_name'] = obj.data['user_name']
-                    base['data'] = obj.data[obj.data['notice_type']]
-                case "channel.ban":
-                    base['channel'] = "Ban"
-                    base['user_name'] = obj.data['user_name']
-                    base['data'] = {
-                        "moderator_user_name": obj.data['moderator_user_name'],
-                        "reason": obj.data['reason'],
-                        "is_permanent": obj.data['is_permanent'],
-                        }
-                case _:
-                    base['data'] = {}
-            out.append(base)
-        return self.app.response_json({"status": True, "data": out, "paused": paused})
+        queue, paused = await self.get_alert_queue()
+        return self.app.response_json({"status": True, "data": queue, "paused": paused})
 
     @route('/queue/remove/{item_id}')
     async def remove_item_from_queue(self, request):
