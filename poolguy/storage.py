@@ -108,17 +108,17 @@ class JSONStorage(BaseStorage):
             return {}
         return await aioLoadJSON(file_path)
     
-    async def save_queue(self, queue_data):
+    def save_queue(self, queue_data):
         file_path = os.path.join(self.storage_dir, "queue.json")
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        await aioSaveJSON(queue_data, file_path)
+        saveJSON(queue_data, file_path)
 
-    async def load_queue(self):
+    def load_queue(self):
         file_path = os.path.join(self.storage_dir, "queue.json")
         if not os.path.exists(file_path):
             logger.warning(f"No queue found at {file_path}")
             return []
-        return await aioLoadJSON(file_path)
+        return loadJSON(file_path)
 
 #==================================================================
 #==================================================================
