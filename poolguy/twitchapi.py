@@ -11,7 +11,6 @@ from .http import RequestHandler
 logger = logging.getLogger(__name__)
 
 apiUrlPrefix = "https://api.twitch.tv/helix"
-emoteEndpoint = "https://static-cdn.jtvnw.net/emoticons/v2/"
 apiEndpoints = {
     "subscriptions": f"{apiUrlPrefix}/subscriptions",
     "polls": f"{apiUrlPrefix}/polls",
@@ -139,13 +138,13 @@ class TwitchApi(RequestHandler):
         if bid:
             bid = str(bid)
         match event:
-            case 'channel.chat.message' | 'channel.chat.notification' | 'channel.chat.clear':
+            case 'channel.chat.message' | 'channel.chat.message_delete' | 'channel.chat.clear_user_messages' | 'channel.chat.notification' | 'channel.chat.clear':
                 condition = {'broadcaster_user_id': bid or uid, 'user_id': uid}
                 
             case 'channel.raid':
                 condition = {'to_broadcaster_user_id': uid}
                 
-            case 'channel.follow' | 'channel.shield_mode.begin' | 'channel.shield_mode.end':
+            case 'channel.follow' | 'channel.shield_mode.begin' | 'channel.shield_mode.end' | 'channel.suspicious_user.message':
                 condition = {'broadcaster_user_id': bid or uid, 'moderator_user_id': uid}
                 
             case 'user.update':
@@ -689,30 +688,3 @@ class TwitchApi(RequestHandler):
                 tasks.append(asyncio.create_task(self.deleteEventSub(sub['id'])))
         await asyncio.gather(*tasks)
         logger.warning(f"Removed all inactive EventSub subscriptions")
-
-    async def get7tvEmotes(self):
-        cdnurl = "https://cdn.7tv.app/emote/"
-        emotes = {}
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://7tv.io/v3/emote-sets/global") as response:
-                response.raise_for_status()
-                rmotes = await response.json()
-                rmotes = rmotes['emotes']
-                for e in rmotes:
-                    emotes[e['name']] = cdnurl + e['id'] + "/4x.webp"
-
-            async with session.get("https://7tv.io/v3/users/twitch/" + str(self.user_id)) as response:
-                response.raise_for_status()
-                rmotes = await response.json()
-                rmotes = rmotes['emote_set']['emotes']
-                for e in rmotes:
-                    emotes[e['name']] = cdnurl + e['id'] + "/4x.webp"
-        return emotes
-
-    async def parseTTVEmote(self, id, format, theme_mode="dark", scale="3.0"):
-        return f'<img height="40px" src="{emoteEndpoint}{id}/{format}/{theme_mode}/{scale}">'
-
-    async def parse7TVEmotes(self, text):
-        for name, url in self.emotes.items():
-            text = re.sub(r'\b' + re.escape(name) + r'\b', f'<img height="40px" src="{url}">', text)
-        return text

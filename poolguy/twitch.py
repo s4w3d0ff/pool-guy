@@ -1,5 +1,4 @@
 import asyncio
-import json
 import time
 import logging
 from collections import defaultdict
@@ -8,7 +7,6 @@ from .twitchws import TwitchWebsocket
 from .webserver import route
 
 logger = logging.getLogger(__name__)
-
 
 class TwitchBot:
     def __init__(self, twitch_config=None, alert_objs=None, max_retries=3, retry_delay=30, **kwargs):
@@ -109,6 +107,8 @@ class TwitchBot:
     async def after_login(self):
         """Use to execute logic after everything is setup and right before we 'self.hold'"""
         pass
+
+
 
 #======================================================================================================================
 #======================================================================================================================

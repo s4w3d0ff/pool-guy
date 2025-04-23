@@ -52,11 +52,11 @@ class BaseStorage(ABC):
         pass
 
     @abstractmethod
-    async def save_queue(self, queue_data):
+    def save_queue(self, queue_data):
         pass
 
     @abstractmethod
-    async def load_queue(self):
+    def load_queue(self):
         pass
 
 #==================================================================
