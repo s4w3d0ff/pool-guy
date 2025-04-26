@@ -90,9 +90,19 @@ class TwitchBot:
         self.ws.add_alert_class(name, obj)
 
     async def send_chat(self, message, channel_id=None):
-        r = await self.http.sendChatMessage(message, channel_id)
-        if not r[0]['is_sent']:
-            logger.error(f"Message not sent! {r[0]['drop_reason']}")
+        out = ""
+        for word in message.split(" "):
+            if len(out) + len(word) > 400:
+                r = await self.http.sendChatMessage(out.strip(), channel_id)
+                if not r[0]['is_sent']:
+                    logger.error(f"Message not sent! {r[0]['drop_reason']}")
+                out = word + " "
+            else:
+                out += word + " "
+        if len(out) > 0:
+            r = await self.http.sendChatMessage(out.strip(), channel_id)
+            if not r[0]['is_sent']:
+                logger.error(f"Message not sent! {r[0]['drop_reason']}")
 
     async def get_alert_queue(self):
         return self.ws.notification_handler.current_queue()
