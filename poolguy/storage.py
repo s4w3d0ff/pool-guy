@@ -2,12 +2,14 @@ import os
 import re
 import json
 import logging
-import aiosqlite
 import aiofiles
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone, timedelta
-
 logger = logging.getLogger(__name__)
+try:
+    import aiosqlite
+except:
+    logger.warning("Could not load aiosqlite! Ignore this message if not using the SQLite storage module.")
 
 def loadJSON(filename):
     """ Load json file """
