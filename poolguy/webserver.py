@@ -77,8 +77,7 @@ class WebServer:
             try:
                 await handler(ws, request)
             except ConnectionResetError:
-                # Handle client disconnect gracefully
-                logger.debug(f"Client disconnected from WebSocket at {path}")
+                logger.warning(f"Client disconnected from WebSocket at {path}")
             except Exception as e:
                 logger.error(f"{path} WebSocket handler error: {e}")
             finally:

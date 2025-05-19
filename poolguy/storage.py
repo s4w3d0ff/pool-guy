@@ -1,11 +1,15 @@
 import os
+import re
 import json
 import logging
 import aiofiles
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
-
+from datetime import datetime, timezone, timedelta
 logger = logging.getLogger(__name__)
+try:
+    import aiosqlite
+except:
+    logger.warning("Could not load aiosqlite! Ignore this message if not using the SQLite storage module.")
 
 def loadJSON(filename):
     """ Load json file """
@@ -108,12 +112,12 @@ class JSONStorage(BaseStorage):
             return {}
         return await aioLoadJSON(file_path)
     
-    def save_queue(self, queue_data):
+    async def save_queue(self, queue_data):
         file_path = os.path.join(self.storage_dir, "queue.json")
         os.makedirs(os.path.dirname(file_path), exist_ok=True)
         saveJSON(queue_data, file_path)
 
-    def load_queue(self):
+    async def load_queue(self):
         file_path = os.path.join(self.storage_dir, "queue.json")
         if not os.path.exists(file_path):
             logger.warning(f"No queue found at {file_path}")
@@ -122,40 +126,148 @@ class JSONStorage(BaseStorage):
 
 #==================================================================
 #==================================================================
-class MongoDBStorage(BaseStorage):
-    async def save_alert(self, message_id, channel, data, timestamp):
-        """Save alert to Mongo database"""
-        raise NotImplementedError("MongoDBStorage not yet implemented in this version!")
-
-    async def load_alerts(self, channel, date):
-        """Load alerts for specific date"""
-        raise NotImplementedError("MongoDBStorage not yet implemented in this version!")
-
-    async def save_token(self, token, name):
-        """Save OAuth token"""
-        raise NotImplementedError("MongoDBStorage not yet implemented in this version!")
-
-    async def load_token(self, name):
-        """Load OAuth token"""
-        raise NotImplementedError("MongoDBStorage not yet implemented in this version!")
-#==================================================================
-#==================================================================
 class SQLiteStorage(BaseStorage):
+    def __init__(self, db_path='db/twitch.db'):
+        self.db_path = db_path
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        self.today = datetime.now(timezone.utc).date()
+        self._init_flag = False
+
+    def channel_to_table(self, channel: str) -> str:
+        """
+        Sanitizes the channel name for use as a SQLite table name.
+        Replaces all non-word characters (including .) with underscores.
+        """
+        name = re.sub(r'\W+', '_', channel)
+        return f"{name}"
+
+    async def _execute_async(self, query, params=()):
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(query, params)
+            await db.commit()
+
+    async def _init_db(self):
+        # Create token and queue tables if they don't exist
+        await self._execute_async('''
+            CREATE TABLE IF NOT EXISTS tokens (
+                name TEXT PRIMARY KEY,
+                token_json TEXT
+            )
+        ''')
+        await self._execute_async('''
+            CREATE TABLE IF NOT EXISTS queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                queue_json TEXT
+            )
+        ''')
+        self._init_flag = True
+
+    async def _init_check(self):
+        if not self._init_flag:
+            await self._init_db()
+
+    async def _ensure_alert_table(self, channel):
+        table = self.channel_to_table(channel)
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(f'''
+                CREATE TABLE IF NOT EXISTS {table} (
+                    message_id TEXT PRIMARY KEY,
+                    data_json TEXT,
+                    timestamp TEXT
+                )
+            ''')
+            await db.commit()
+
+    # Token methods
+    async def save_token(self, token, name=''):
+        await self._init_check()
+        token_json = json.dumps(token, indent=4)
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                'INSERT OR REPLACE INTO tokens (name, token_json) VALUES (?, ?)', 
+                (name, token_json)
+            )
+            await db.commit()
+
+    async def load_token(self, name=''):
+        await self._init_check()
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute('SELECT token_json FROM tokens WHERE name = ?', (name,)) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return json.loads(row[0])
+                else:
+                    logger.warning(f"No token for name: {name}")
+                    return None
+
+    # Alert methods
     async def save_alert(self, message_id, channel, data, timestamp):
-        """Save alert to SQLite database"""
-        raise NotImplementedError("SQLiteStorage not yet implemented in this version!")
+        await self._init_check()
+        table = self.channel_to_table(channel)
+        await self._ensure_alert_table(channel)
+        if "timestamp" not in data:
+            data['timestamp'] = timestamp
+        data_json = json.dumps(data, indent=4)
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(
+                f'INSERT OR REPLACE INTO {table} (message_id, data_json, timestamp) VALUES (?, ?, ?)',
+                (str(message_id), data_json, data["timestamp"])
+            )
+            await db.commit()
 
-    async def load_alerts(self, channel, date):
-        """Load alerts for specific date"""
-        raise NotImplementedError("SQLiteStorage not yet implemented in this version!")
+    async def load_alerts(self, channel, date=None):
+        """
+        Returns all alerts for 'channel' where timestamp >= the given date (default: last 30 days).
+        'date' can be a datetime.date, datetime.datetime, or 'YYYY-MM-DD' string.
+        """
+        await self._init_check()
+        table = self.channel_to_table(channel)
+        await self._ensure_alert_table(channel)
 
-    async def save_token(self, token, name):
-        """Save OAuth token"""
-        raise NotImplementedError("SQLiteStorage not yet implemented in this version!")
+        # Default: last 30 days
+        if not date:
+            start_dt = datetime.now() - timedelta(days=30)
+        elif isinstance(date, str):
+            start_dt = datetime.strptime(date, "%Y-%m-%d")
+        elif hasattr(date, "year") and hasattr(date, "month") and hasattr(date, "day"):
+            # Accepts datetime.date or datetime.datetime
+            start_dt = datetime(date.year, date.month, date.day)
+        else:
+            raise ValueError("date must be None, a 'YYYY-MM-DD' string, or a date/datetime object")
 
-    async def load_token(self, name):
-        """Load OAuth token"""
-        raise NotImplementedError("SQLiteStorage not yet implemented in this version!")
+        start_ts = start_dt.timestamp()
+
+        alerts = {}
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute(
+                f'SELECT message_id, data_json FROM {table} WHERE CAST(timestamp AS REAL) >= ?',
+                (start_ts,)
+            ) as cursor:
+                async for row in cursor:
+                    alerts[row[0]] = json.loads(row[1])
+        if not alerts:
+            logger.warning(f"No alerts found in channel {channel} since {start_dt.date()}")
+        return alerts
+
+    async def save_queue(self, queue_data):
+        await self._init_check()
+        queue_json = json.dumps(queue_data, indent=4)
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute('DELETE FROM queue')
+            await db.execute('INSERT INTO queue (queue_json) VALUES (?)', (queue_json,))
+            await db.commit()
+
+    async def load_queue(self):
+        await self._init_check()
+        async with aiosqlite.connect(self.db_path) as db:
+            async with db.execute('SELECT queue_json FROM queue ORDER BY id DESC LIMIT 1') as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return json.loads(row[0])
+                else:
+                    logger.warning("No queue found in SQLite DB")
+                    return []
+
 #==================================================================
 #==================================================================
 class FakeStorage(BaseStorage):
@@ -170,6 +282,7 @@ class FakeStorage(BaseStorage):
 
     async def load_token(self, name):
         logger.error(f"[FakeStorage] Fake load_token triggered!")
+
 #==================================================================
 #==================================================================
 class StorageFactory:
@@ -178,8 +291,6 @@ class StorageFactory:
         match storage_type:
             case 'json':
                 return JSONStorage(**kwargs)
-            case 'mongodb':
-                return MongoDBStorage(**kwargs)
             case 'sqlite':
                 return SQLiteStorage(**kwargs)
             case 'fake':

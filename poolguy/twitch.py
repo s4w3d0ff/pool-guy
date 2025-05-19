@@ -1,5 +1,4 @@
 import asyncio
-import json
 import time
 import logging
 from collections import defaultdict
@@ -8,7 +7,6 @@ from .twitchws import TwitchWebsocket
 from .webserver import route
 
 logger = logging.getLogger(__name__)
-
 
 class TwitchBot:
     def __init__(self, twitch_config=None, alert_objs=None, max_retries=3, retry_delay=30, **kwargs):
@@ -92,9 +90,19 @@ class TwitchBot:
         self.ws.add_alert_class(name, obj)
 
     async def send_chat(self, message, channel_id=None):
-        r = await self.http.sendChatMessage(message, channel_id)
-        if not r[0]['is_sent']:
-            logger.error(f"Message not sent! {r[0]['drop_reason']}")
+        out = ""
+        for word in message.split(" "):
+            if len(out) + len(word) > 400:
+                r = await self.http.sendChatMessage(out.strip(), channel_id)
+                if not r[0]['is_sent']:
+                    logger.error(f"Message not sent! {r[0]['drop_reason']}")
+                out = word + " "
+            else:
+                out += word + " "
+        if len(out) > 0:
+            r = await self.http.sendChatMessage(out.strip(), channel_id)
+            if not r[0]['is_sent']:
+                logger.error(f"Message not sent! {r[0]['drop_reason']}")
 
     async def get_alert_queue(self):
         return self.ws.notification_handler.current_queue()
@@ -109,6 +117,8 @@ class TwitchBot:
     async def after_login(self):
         """Use to execute logic after everything is setup and right before we 'self.hold'"""
         pass
+
+
 
 #======================================================================================================================
 #======================================================================================================================
