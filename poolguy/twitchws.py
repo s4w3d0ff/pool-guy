@@ -127,7 +127,7 @@ class AlertPriorityQueue(asyncio.PriorityQueue):
             return False
         
         try:
-            saved_items = self.storage.load_queue()
+            saved_items = await self.storage.load_queue()
         except json.decoder.JSONDecodeError:
             saved_items = []
 
@@ -153,9 +153,9 @@ class AlertPriorityQueue(asyncio.PriorityQueue):
             await super().put(item)
             self._id_map[alert_id] = item
 
-    def _save_state(self) -> None:
+    async def _save_state(self) -> None:
         if self.storage:
-            self.storage.save_queue(
+            await self.storage.save_queue(
                 [alert.to_dict() for _, alert in self._id_map.values()]
             )
 
@@ -168,7 +168,7 @@ class AlertPriorityQueue(asyncio.PriorityQueue):
         item = (alert.priority, alert)
         await super().put(item)
         self._id_map[alert_id] = item
-        self._save_state()
+        await self._save_state()
         return alert_id
 
     async def get(self) -> Tuple[str, 'Alert']:
@@ -185,7 +185,7 @@ class AlertPriorityQueue(asyncio.PriorityQueue):
                 break
         if found_id:
             del self._id_map[found_id]
-        self._save_state()
+        await self._save_state()
         return found_id, alert
 
     async def remove_by_id(self, alert_id: str) -> bool:
@@ -206,7 +206,7 @@ class AlertPriorityQueue(asyncio.PriorityQueue):
                 temp_items.append(item)
         for item in temp_items:
             await super().put(item)
-        self._save_state()
+        await self._save_state()
         return True
 
     def get_contents(self) -> List[Dict[str, Any]]:
@@ -326,7 +326,7 @@ class TwitchWebsocket:
         self._socket = None
         self._running = False
         self._session_id = None
-        self._seen_messages = MaxSizeDict(15) # shouldnt have to save more than this
+        self._seen_messages = MaxSizeDict(15)
         self._socket_task = None
 
     async def _socket_loop(self):
