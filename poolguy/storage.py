@@ -63,6 +63,7 @@ class BaseStorage(ABC):
     async def load_queue(self):
         pass
 
+
 #==================================================================
 #==================================================================
 class JSONStorage(BaseStorage):
@@ -168,26 +169,21 @@ class SQLiteStorage(BaseStorage):
 
     async def _ensure_alert_table(self, channel):
         table = self.channel_to_table(channel)
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(f'''
+        await self._execute_async(f'''
                 CREATE TABLE IF NOT EXISTS {table} (
                     message_id TEXT PRIMARY KEY,
                     data_json TEXT,
                     timestamp TEXT
                 )
             ''')
-            await db.commit()
 
-    # Token methods
     async def save_token(self, token, name=''):
         await self._init_check()
         token_json = json.dumps(token, indent=4)
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
+        await self._execute_async(
                 'INSERT OR REPLACE INTO tokens (name, token_json) VALUES (?, ?)', 
                 (name, token_json)
             )
-            await db.commit()
 
     async def load_token(self, name=''):
         await self._init_check()
@@ -208,12 +204,10 @@ class SQLiteStorage(BaseStorage):
         if "timestamp" not in data:
             data['timestamp'] = timestamp
         data_json = json.dumps(data, indent=4)
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
+        await self._execute_async(
                 f'INSERT OR REPLACE INTO {table} (message_id, data_json, timestamp) VALUES (?, ?, ?)',
                 (str(message_id), data_json, data["timestamp"])
             )
-            await db.commit()
 
     async def load_alerts(self, channel, date=None):
         """

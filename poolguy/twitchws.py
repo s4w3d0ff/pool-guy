@@ -11,7 +11,6 @@ from typing import List, Tuple, Dict, Any, Optional
 from .twitchapi import TwitchApi
 from .storage import BaseStorage
 
-
 logger = logging.getLogger(__name__)
 
 WSURL = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=600"
@@ -84,12 +83,13 @@ class Alert(ABC):
 class GenericAlert(Alert):
     """Generic alert class for handling unknown alert types."""
     queue_skip = True
-    priority = 4
-    
+    store = True
+
     async def process(self):
         logger.warning(f"Processing generic alert for {self.channel} -> {self.message_id}")
         logger.debug(f"Data: {self.data}")
 
+#=============================================================================================
 
 class AlertFactory:
     """Factory class to create the appropriate Alert instance based on event type."""
@@ -111,6 +111,7 @@ class AlertFactory:
             return GenericAlert(bot, message_id, channel, data, timestamp)
 
 #=============================================================================================
+
 class AlertPriorityQueue(asyncio.PriorityQueue):
     """
     A PriorityQueue that allows viewing and removing specific alerts using unique identifiers.
@@ -122,10 +123,9 @@ class AlertPriorityQueue(asyncio.PriorityQueue):
         self.storage = storage
 
     async def _load_state(self, bot: 'TwitchBot') -> None: #type: ignore
-        if self.storage is None:
+        if not self.storage:
             logger.warning("No storage configured for AlertPriorityQueue.")
             return False
-        
         try:
             saved_items = await self.storage.load_queue()
         except json.decoder.JSONDecodeError:
@@ -221,6 +221,7 @@ class AlertPriorityQueue(asyncio.PriorityQueue):
         return len(self._id_map)
 
 #=============================================================================================
+
 class NotificationHandler:
     def __init__(self, bot, storage):
         self.bot = bot
@@ -300,6 +301,7 @@ class NotificationHandler:
 
 
 #=============================================================================================
+
 class MaxSizeDict(OrderedDict):
     """ OrderedDict subclass with a 'max_size' which restricts the len. 
     As items are added, the oldest items are removed to make room. """
@@ -316,6 +318,7 @@ class MaxSizeDict(OrderedDict):
         super().__setitem__(key, value)
 
 #========================================================================================
+
 class TwitchWebsocket:
     """ Handles EventSub Websocket connection and subscriptions """
     def __init__(self, bot, channels=None, max_reconnect=None, http=None, *args, **kwargs):
@@ -342,13 +345,13 @@ class TwitchWebsocket:
                     # wait for message
                     message = await self._socket.recv()
                 except:
-                    # something bad happened
                     logger.exception(f"_socket.recv:\n")
                     # break first loop and reconnect if _running
                     break
                 try:
                     # handle message
-                    await self.handle_message(json.loads(message))
+                    #await self.handle_message(json.loads(message))
+                    asyncio.create_task(self.handle_message(json.loads(message)))
                 except:
                     # error in handle_message, still connected
                     logger.exception(f"handle_message:\n{message}\n")
@@ -429,7 +432,8 @@ class TwitchWebsocket:
                 case "session_welcome": 
                     await self.handle_session_welcome(meta, message["payload"])
                 case "session_reconnect": 
-                    await self.handle_session_reconnect(meta, message["payload"])
+                    #await self.handle_session_reconnect(meta, message["payload"])
+                    asyncio.create_task(self.handle_session_reconnect(meta, message["payload"]))
                 case "notification":
                     asyncio.create_task(self.notification_handler(meta, message["payload"]))
                 case "session_keepalive":

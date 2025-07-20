@@ -278,7 +278,7 @@ class TwitchApi(RequestHandler):
         r = await self._request("post", f"{apiEndpoints['chat']}/announcements", data=json.dumps(data))
         return r['data']
 
-    async def sendShoutout(self, from_broadcaster_id=None, to_broadcaster_id=None, moderator_id=None):
+    async def sendShoutout(self, to_broadcaster_id=None, from_broadcaster_id=None, moderator_id=None):
         data = {
             "from_broadcaster_id": from_broadcaster_id or self.user_id,
             "to_broadcaster_id": to_broadcaster_id,
