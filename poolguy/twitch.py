@@ -104,6 +104,12 @@ class TwitchBot:
             if not r[0]['is_sent']:
                 logger.error(f"Message not sent! {r[0]['drop_reason']}")
 
+    async def ws_wait_for_twitch_login(self, ws):
+        while not self.http.user_id:
+            logger.error(f"Waiting for Twitch login...")
+            await ws.ping()
+            await asyncio.sleep(10)
+
     async def get_alert_queue(self):
         return self.ws.notification_handler.current_queue()
     

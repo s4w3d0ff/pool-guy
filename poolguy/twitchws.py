@@ -20,8 +20,8 @@ def convert2epoch(timestampstr):
 
 class Alert(ABC):
     queue_skip = False
-    store = True
     priority = 3
+    store = True
     
     def __init__(
             self, 
