@@ -47,7 +47,7 @@ class TokenHandler:
         self.redirect_uri = redirect_uri
         self.scopes = scopes or []
         #--------
-        self.storage = storage or StorageFactory.create_storage('json')
+        self.storage = storage or StorageFactory.create_storage('sqlite')
         parsed_uri = urlparse(self.redirect_uri)
         self.server = webserver or WebServer(parsed_uri.hostname, parsed_uri.port)
         self.server.add_route(f"/{parsed_uri.path.lstrip('/')}", self._callback_handler)
@@ -120,7 +120,7 @@ class TokenHandler:
                 if "refresh_token" not in self._token:
                     self._token['refresh_token'] = r_token 
                 self._token["expires_time"] = time.time()+int(self._token['expires_in'])
-                await self.storage.save_token(self._token, name="twitch")
+                await self.storage.save_token("twitch", self._token)
                 return self._token
 
     async def _refresh(self):
@@ -210,7 +210,7 @@ class TokenHandler:
             self._token = token
         else:
             logger.warning(f"Attempting to load saved token...")
-            self._token = await self.storage.load_token(name="twitch")
+            self._token = await self.storage.load_token("twitch")
         if self._token:
             logger.warning(f"Loaded token!")
         else:

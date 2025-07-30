@@ -59,16 +59,8 @@ apiEndpoints = {
     "shield_mode": f"{apiUrlPrefix}/moderation/shield_mode"
 }
 
-eventChannels = None
-
-async def fetch_eventsub_types(dir="db", eventsubdocurl="https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/"):
-    global eventChannels
-    filename = f"{dir}/eventsub_types.json"
-    if os.path.exists(filename):
-        logger.info(f"fetch_eventsub_types: loaded {filename}")
-        eventChannels = await aioLoadJSON(filename)
-        return eventChannels
-
+async def fetch_eventsub_versions(eventsubdocurl="https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/"):
+    """Fetch and parse Twitch Eventsub documentation to extract event channels. This is dumb, but it works for now."""
     # Fetch HTML content
     async with aiohttp.ClientSession() as session:
         async with session.get(eventsubdocurl) as response:
@@ -85,14 +77,12 @@ async def fetch_eventsub_types(dir="db", eventsubdocurl="https://dev.twitch.tv/d
     if not tbody_match:
         logger.error("Could not locate the <tbody> section under Subscription Types.")
         raise ValueError("Unable to locate the <tbody> section under Subscription Types.")
-
+    
+    out = []
     tbody_content = tbody_match.group(1)
-
     # Extract rows from the `<tbody>` section
     rows = re.findall(r'<tr>(.*?)</tr>', tbody_content, re.S)
     logger.debug(f"Extracted rows: {rows}")
-    subscription_data = {}
-
     for row in rows:
         # Extract text from <code> tags, ignoring attributes like class
         codes = re.findall(r'<code[^>]*>(.*?)</code>', row)
@@ -100,24 +90,23 @@ async def fetch_eventsub_types(dir="db", eventsubdocurl="https://dev.twitch.tv/d
         if len(codes) >= 2:
             subtype, version = codes[0], codes[1]
             if len(subtype) > 4 and len(version) < 5:
-                subscription_data[subtype] = version
-
-    if not subscription_data:
+                out.append({
+                    "name": subtype,
+                    "version": version
+                })
+    if not out:
         logger.error(f"No valid subscription types found. Rows extracted: {rows}")
         raise ValueError("No valid subscription types found.")
+    return out
 
-    # Save results to file
-    os.makedirs(dir, exist_ok=True)
-    await aioSaveJSON(subscription_data, filename)
-    eventChannels = subscription_data
-    return eventChannels
-
-# Run the function
-asyncio.run(fetch_eventsub_types())
 
 class TwitchApi(RequestHandler):
-
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._init_flag = False
+        
     async def _continuePage(self, method, url, page, **kwargs):
+        """ Helper function to handle pagination in Twitch API calls """
         out = []
         while "cursor" in page:
             if 'params' in kwargs:
@@ -133,40 +122,50 @@ class TwitchApi(RequestHandler):
         
     #============================================================================
     # EventSub Methods ================================================================
-    async def createEventSub(self, event, session_id, bid=None):
+    async def _get_eventsub_version(self, name):
+        """Get eventsub version by name, updates once per initialization."""
+        if not self._init_flag:
+            o = await fetch_eventsub_versions()
+            logger.debug(f"{o = }")
+            for item in o:
+                await self.storage.insert("subpub_versions", item)
+            self._init_flag = True
+        out = await self.storage.query("subpub_versions", "WHERE name = ?", (name,))
+        return out[0]['version'] if out else None
+
+    async def _determine_eventsub_condition(self, event, bid=None):
+        """Determine the event condition based on the event type."""
         uid = str(self.user_id)
         if bid:
             bid = str(bid)
         match event:
             case 'channel.chat.message' | 'channel.chat.message_delete' | 'channel.chat.clear_user_messages' | 'channel.chat.notification' | 'channel.chat.clear':
                 condition = {'broadcaster_user_id': bid or uid, 'user_id': uid}
-                
             case 'channel.raid':
                 condition = {'to_broadcaster_user_id': uid}
-                
             case 'channel.follow' | 'channel.shield_mode.begin' | 'channel.shield_mode.end' | 'channel.suspicious_user.message':
                 condition = {'broadcaster_user_id': bid or uid, 'moderator_user_id': uid}
-                
             case 'user.update':
                 condition = {'user_id': uid}
-                
             case 'user.authorization.grant' | 'user.authorization.revoke':
                 condition = {'client_id': str(self.client_id)}
-                
             case _:
                 condition = {'broadcaster_user_id': bid or uid}
-        logger.debug(f'[createEventSub] -> {event}: {condition}')
+        return condition
+
+    async def createEventSub(self, event, session_id, bid=None):
+        """ Create an EventSub subscription """
         try:
-            data = {
+            data = json.dumps({
                 "type": event,
-                "version": str(eventChannels[event]),
-                "condition": condition,
+                "version": await self._get_eventsub_version(event),
+                "condition": await self._determine_eventsub_condition(event, bid),
                 "transport": {'method': 'websocket', 'session_id': session_id}
-            }
-            return await self._request("post", apiEndpoints['eventsub'], data=json.dumps(data))
+            })
+            logger.debug(f'Sending [createEventSub] -> {data}')
+            return await self._request("post", apiEndpoints['eventsub'], data=data)
         except Exception as e:
-            logger.error(f"Failed to create EventSub subscription: \n{e}")
-            logger.error(f"Request data was: \n{json.dumps(data)}")
+            logger.error(f"Failed to create EventSub subscription: \n{e}\n\n{data = }")
             raise
 
     async def deleteEventSub(self, id):
@@ -188,10 +187,12 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Badges Methods ================================================================
     async def getGlobalChatBadges(self):
+        """ Get global chat badges """
         r = await self._request("get", apiEndpoints['global_badges'])
         return r['data']
         
     async def getChannelChatBadges(self, broadcaster_id=None):
+        """ Get channel chat badges """
         params = {"broadcaster_id": broadcaster_id or self.user_id}
         r = await self._request("get", apiEndpoints['channel_badges'], params=params)
         return r['data']
@@ -199,11 +200,13 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Channel Methods ================================================================
     async def getChannelInfo(self, broadcaster_id=None):
+        """ Get channel information """
         params = {"broadcaster_id": broadcaster_id or self.user_id}
         r = await self._request("get", apiEndpoints['broadcast'], params=params)
         return r['data']
 
     async def getFollowedChannels(self, user_id=None, broadcaster_id=None):
+        """ Get followed channels """
         params = {
             "user_id": user_id or self.user_id,
             "broadcaster_id": broadcaster_id
@@ -212,6 +215,7 @@ class TwitchApi(RequestHandler):
         return r['data']
 
     async def getChannelFollowers(self, broadcaster_id=None, first=None):
+        """ Get channel followers """
         method = "get"
         url = apiEndpoints['followers']
         params = {"broadcaster_id": broadcaster_id or self.user_id}
@@ -224,6 +228,7 @@ class TwitchApi(RequestHandler):
         return out
 
     async def getChannelStreamSchedule(self, broadcaster_id=None, first=None):
+        """ Get channel stream schedule """
         method = "get"
         url = apiEndpoints['schedule']
         params = {"broadcaster_id": broadcaster_id or self.user_id}
@@ -239,6 +244,7 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Chat Methods ================================================================
     async def sendChatMessage(self, message, broadcaster_id=None):
+        """ Send a chat message to the channel """
         data = {
             "broadcaster_id": broadcaster_id or self.user_id,
             "sender_id": self.user_id,
@@ -248,6 +254,7 @@ class TwitchApi(RequestHandler):
         return r['data']
 
     async def getChatters(self, broadcaster_id=None, moderator_id=None):
+        """ Get the list of chatters in the channel """
         params = {
             "broadcaster_id": broadcaster_id or self.user_id,
             "moderator_id": moderator_id or self.user_id
@@ -256,6 +263,7 @@ class TwitchApi(RequestHandler):
         return r['data']
 
     async def getChatSettings(self, broadcaster_id=None, moderator_id=None):
+        """ Get the chat settings for the channel """
         params = {
             "broadcaster_id": broadcaster_id or self.user_id,
             "moderator_id": moderator_id or self.user_id
@@ -264,12 +272,14 @@ class TwitchApi(RequestHandler):
         return r['data']
 
     async def updateChatSettings(self, broadcaster_id=None, settings=None):
+        """ Update the chat settings for the channel """
         data = settings or {}
         data["broadcaster_id"] = broadcaster_id or self.user_id
         r = await self._request("patch", f"{apiEndpoints['chat']}/settings", data=json.dumps(data))
         return r['data']
 
     async def sendAnnouncement(self, broadcaster_id=None, message="", color="primary"):
+        """ Send an announcement to the channel's chat """
         data = {
             "broadcaster_id": broadcaster_id or self.user_id,
             "message": message,
@@ -279,6 +289,7 @@ class TwitchApi(RequestHandler):
         return r['data']
 
     async def sendShoutout(self, to_broadcaster_id=None, from_broadcaster_id=None, moderator_id=None):
+        """ Send a shoutout to another channel """
         data = {
             "from_broadcaster_id": from_broadcaster_id or self.user_id,
             "to_broadcaster_id": to_broadcaster_id,
@@ -290,11 +301,13 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Clips Methods ================================================================
     async def createClip(self, broadcaster_id=None):
+        """ Create a clip from the broadcaster's stream """
         data = {"broadcaster_id": broadcaster_id or self.user_id}
         r = await self._request("post", apiEndpoints['clips'], data=json.dumps(data))
         return r['data']
 
     async def getClips(self, broadcaster_id=None, game_id=None, clip_id=None, first=None):
+        """ Get clips from the broadcaster's channel """
         method = "get"
         url = apiEndpoints['clips']
         params = {
@@ -314,6 +327,7 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Commercial Methods ================================================================
     async def startCommercial(self, broadcaster_id=None, length=30):
+        """ Start a commercial on the broadcaster's channel """
         data = {
             "broadcaster_id": broadcaster_id or self.user_id,
             "length": length
@@ -324,6 +338,7 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Bits Methods ================================================================
     async def getBitsLeaderboard(self, count=10, period="all", started_at=None):
+        """ Get the Bits leaderboard for a broadcaster """
         method = "get"
         url = apiEndpoints['bits']
         params = {"count": count, "period": period}
@@ -340,6 +355,7 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Games Methods ================================================================
     async def getTopGames(self, first=None):
+        """ Get the top games for a broadcaster """
         method = "get"
         url = apiEndpoints['categories']+"/top"
         params = {"first": first or 20}
@@ -353,6 +369,7 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Goals Methods ================================================================
     async def getCreatorGoals(self, broadcaster_id=None):
+        """ Get the goals for a broadcaster """
         params = {"broadcaster_id": broadcaster_id or self.user_id}
         r = await self._request("get", apiEndpoints['goals'], params=params)
         return r['data']
@@ -360,6 +377,7 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Hype Train Methods ================================================================
     async def getHypeTrainEvents(self, broadcaster_id=None):
+        """ Get the hype train events for a broadcaster """
         params = {"broadcaster_id": broadcaster_id or self.user_id}
         r = await self._request("get", apiEndpoints['hype_train'], params=params)
         return r['data']
@@ -367,11 +385,13 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Moderation Methods ================================================================
     async def getBannedUsers(self, broadcaster_id=None):
+        """ Get the banned users for a broadcaster """
         params = {"broadcaster_id": broadcaster_id or self.user_id}
         r = await self._request("get", apiEndpoints['banned_users'], params=params)
         return r['data']
 
     async def banUser(self, broadcaster_id=None, user_id=None, reason=None, duration=None):
+        """ Ban a user from the channel """
         data = {
             "data": {
                 "user_id": user_id,
@@ -388,6 +408,7 @@ class TwitchApi(RequestHandler):
         return r['data']
 
     async def unbanUser(self, broadcaster_id=None, user_id=None):
+        """ Unban a user from the channel """
         params = {
             "broadcaster_id": broadcaster_id or self.user_id,
             "user_id": user_id
@@ -398,11 +419,13 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Moderator Methods ================================================================
     async def getModerators(self, broadcaster_id=None):
+        """ Get moderators of the channel """
         params = {"broadcaster_id": broadcaster_id or self.user_id}
         r = await self._request("get", apiEndpoints['moderators'], params=params)
         return r['data']
 
     async def addModerator(self, broadcaster_id=None, user_id=None):
+        """ Add a moderator to the channel """
         data = {
             "broadcaster_id": broadcaster_id or self.user_id,
             "user_id": user_id
@@ -411,6 +434,7 @@ class TwitchApi(RequestHandler):
         return r['data']
 
     async def removeModerator(self, broadcaster_id=None, user_id=None):
+        """ Remove a moderator from the channel """
         params = {
             "broadcaster_id": broadcaster_id or self.user_id,
             "user_id": user_id
@@ -421,11 +445,13 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # VIP Methods ================================================================
     async def getVIPs(self, broadcaster_id=None):
+        """ Get a list of VIPs for the channel """
         params = {"broadcaster_id": broadcaster_id or self.user_id}
         r = await self._request("get", apiEndpoints['channel_vips'], params=params)
         return r['data']
 
     async def addVIP(self, broadcaster_id=None, user_id=None):
+        """ Add a VIP to the channel """
         data = {
             "broadcaster_id": broadcaster_id or self.user_id,
             "user_id": user_id
@@ -434,6 +460,7 @@ class TwitchApi(RequestHandler):
         return r['data']
 
     async def removeVIP(self, broadcaster_id=None, user_id=None):
+        """ Remove a VIP from the channel """
         params = {
             "broadcaster_id": broadcaster_id or self.user_id,
             "user_id": user_id
@@ -444,6 +471,7 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Chat Warning ================================================================
     async def warnUser(self, broadcaster_id=None, user_id=None, reason=None):
+        """ Warn a user in the chat """
         data = {
             "broadcaster_id": broadcaster_id or self.user_id,
             "user_id": user_id,
@@ -455,6 +483,7 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Poll Methods ================================================================
     async def getPolls(self, broadcaster_id=None, first=None):
+        """ Get polls for a channel """
         method = "get"
         url = apiEndpoints['polls']
         params = {"broadcaster_id": broadcaster_id or self.user_id, "first": first or 20}
@@ -465,6 +494,7 @@ class TwitchApi(RequestHandler):
         return out
 
     async def createPoll(self, broadcaster_id=None, title=None, choices=None, duration=300):
+        """ Create a poll for a channel """
         data = {
             "broadcaster_id": broadcaster_id or self.user_id,
             "title": title,
@@ -475,6 +505,7 @@ class TwitchApi(RequestHandler):
         return r['data']
 
     async def endPoll(self, broadcaster_id=None, poll_id=None, status="TERMINATED"):
+        """ End a poll for a channel """
         data = {
             "broadcaster_id": broadcaster_id or self.user_id,
             "id": poll_id,
@@ -486,6 +517,7 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Prediction Methods ================================================================
     async def getPredictions(self, broadcaster_id=None, first=None):
+        """ Get predictions for a channel """
         method = "get"
         url = apiEndpoints['predictions']
         params = {"broadcaster_id": broadcaster_id or self.user_id, "first": first or 20}
@@ -496,6 +528,7 @@ class TwitchApi(RequestHandler):
         return out
 
     async def createPrediction(self, broadcaster_id=None, title=None, outcomes=None, prediction_window=300):
+        """ Create a prediction for a channel """
         data = {
             "broadcaster_id": broadcaster_id or self.user_id,
             "title": title,
@@ -506,6 +539,7 @@ class TwitchApi(RequestHandler):
         return r['data']
 
     async def endPrediction(self, broadcaster_id=None, id=None, status="RESOLVED", winning_outcome_id=None):
+        """ End a prediction for a channel """
         data = {
             "broadcaster_id": broadcaster_id or self.user_id,
             "id": id,
@@ -519,6 +553,7 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Raid Methods ================================================================
     async def startRaid(self, from_broadcaster_id=None, to_broadcaster_id=None):
+        """ Start a raid to another channel """
         data = {
             "from_broadcaster_id": from_broadcaster_id or self.user_id,
             "to_broadcaster_id": to_broadcaster_id
@@ -527,6 +562,7 @@ class TwitchApi(RequestHandler):
         return r['data']
 
     async def cancelRaid(self, broadcaster_id=None):
+        """ Cancel a raid """
         params = {"broadcaster_id": broadcaster_id or self.user_id}
         r = await self._request("delete", apiEndpoints['raids'], params=params)
         return r['data']
@@ -534,6 +570,7 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Search Methods ================================================================
     async def searchCategories(self, query, first=None):
+        """ Search for categories """
         method = "get"
         url = f"{apiEndpoints['categories']}/search"
         params = {"query": query, "first": first or 20}
@@ -544,6 +581,7 @@ class TwitchApi(RequestHandler):
         return out
 
     async def searchChannels(self, query, first=None, live_only=False):
+        """ Search for channels """
         method = "get"
         url = f"{apiEndpoints['broadcast']}/search"
         params = {"query": query, "first": first or 20, "live_only": live_only}
@@ -556,6 +594,7 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Stream Methods ================================================================
     async def getStreams(self, first=None, **kwargs):
+        """ Get streams """
         method = "get"
         url = apiEndpoints['streams']
         kwargs['first'] = first or 100
@@ -567,6 +606,7 @@ class TwitchApi(RequestHandler):
         return out
 
     async def getFollowedStreams(self, user_id=None, first=None):
+        """ Get followed streams """
         method = "get"
         url = f"{apiEndpoints['streams']}/followed"
         params = {"user_id": user_id or self.user_id}
@@ -579,6 +619,7 @@ class TwitchApi(RequestHandler):
         return out
 
     async def createStreamMarker(self, description=None):
+        """ Create a stream marker """
         data = {
             "user_id": self.user_id,
             "description": description
@@ -587,6 +628,7 @@ class TwitchApi(RequestHandler):
         return r['data']
 
     async def getStreamMarkers(self, user_id=None, video_id=None, first=None):
+        """ Get stream markers """
         method = "get"
         url = apiEndpoints['stream_markers']
         params = {"user_id": user_id, "video_id": video_id, "first": first or 20}
@@ -599,6 +641,7 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Subscription Methods ================================================================
     async def getBroadcasterSubscriptions(self, user_id=None, broadcaster_id=None, first=None):
+        """ Get broadcaster subscriptions """
         method = "get"
         url = apiEndpoints['subscriptions']
         params = {"broadcaster_id": broadcaster_id or self.user_id, "first": first or 100}
@@ -614,6 +657,7 @@ class TwitchApi(RequestHandler):
         return out
 
     async def checkUserSubscription(self, broadcaster_id=None, user_id=None):
+        """ Check if a user is subscribed to a broadcaster """
         params = {
             "broadcaster_id": broadcaster_id or self.user_id,
             "user_id": user_id or self.user_id
@@ -624,6 +668,7 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # Tag Methods ================================================================
     async def getAllStreamTags(self, first=None):
+        """ Get all stream tags """
         method = "get"
         url = apiEndpoints['tags']
         params = {"first": first or 20}
@@ -634,6 +679,7 @@ class TwitchApi(RequestHandler):
         return out
 
     async def getStreamTags(self, broadcaster_id=None):
+        """ Get stream tags for a broadcaster """
         params = {
             "broadcaster_id": broadcaster_id or self.user_id
         }
@@ -643,6 +689,7 @@ class TwitchApi(RequestHandler):
     #============================================================================
     # User Methods ================================================================
     async def getUsers(self, ids=None, logins=None):
+        """ Get user information """
         params = {}
         if ids:
             params["id"] = ids if isinstance(ids, list) else [ids]
@@ -652,6 +699,7 @@ class TwitchApi(RequestHandler):
         return r['data']
 
     async def sendWhisper(self, to_user_id, message):
+        """ Send a whisper to a user """
         data = {
             "from_user_id": self.user_id,
             "to_user_id": to_user_id,
@@ -661,6 +709,7 @@ class TwitchApi(RequestHandler):
         return r['data']
 
     async def modifyChannelInfo(self, broadcaster_id=None, **kwargs):
+        """ Modify channel information """
         data = {"broadcaster_id": broadcaster_id or self.user_id}
         # Add optional parameters if provided
         valid_params = [
@@ -677,6 +726,7 @@ class TwitchApi(RequestHandler):
     #=========================================================================
     # Extras ===================================================================
     async def unsubAllEvents(self):
+        """ Unsubscribe from all events """
         r = await self.getEventSubs()
         tasks = []
         for sub in r['data']:

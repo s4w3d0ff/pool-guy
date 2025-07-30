@@ -4,7 +4,7 @@ import logging
 from collections import defaultdict
 from functools import wraps
 from .twitchws import TwitchWebsocket
-from .webserver import route
+from .webserver import route, websocket
 
 logger = logging.getLogger(__name__)
 
@@ -309,3 +309,27 @@ class UIBot(TwitchBot):
     async def resume_queue(self, request):
         self.ws.notification_handler.resume()
         return self.app.response_json({"status": True, "message": "Queue resumed"})
+
+    @websocket('/queuews')
+    async def b_ws(self, ws, request):
+        logger.warning("queue websocket connected")
+        await self.ws_wait_for_twitch_login(ws)
+        while not ws.closed:
+            try:
+                update = await self.get_alert_queue()
+                await ws.send_json({"status": True, "paused": update[1], "data": update[0]})
+                await asyncio.sleep(1)
+            except ConnectionResetError:
+                logger.warning("WebSocket client forcibly disconnected during send")
+                break
+            except asyncio.TimeoutError:
+                try:
+                    await ws.ping()
+                except Exception as e:
+                    logger.warning(f"Ping failed: {e}")
+                    break
+            except Exception as e:
+                logger.error(f"Unexpected error in queuews loop: {e}")
+                break
+        ws.exception()
+        logger.warning("queue websocket connection closed")

@@ -73,8 +73,8 @@ class WebServer:
         @wraps(handler)
         async def ws_wrapper(request):
             ws = web.WebSocketResponse(**kwargs)
-            await ws.prepare(request)
             try:
+                await ws.prepare(request)
                 await handler(ws, request)
             except ConnectionResetError:
                 logger.warning(f"Client disconnected from WebSocket at {path}")

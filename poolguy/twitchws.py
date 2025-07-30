@@ -7,9 +7,8 @@ import uuid
 from abc import ABC, abstractmethod
 from dateutil import parser
 from collections import OrderedDict
-from typing import List, Tuple, Dict, Any, Optional
+from typing import List, Tuple, Dict, Any
 from .twitchapi import TwitchApi
-from .storage import BaseStorage
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +20,7 @@ def convert2epoch(timestampstr):
 class Alert(ABC):
     queue_skip = False
     priority = 3
-    store = True
+    store = False
     
     def __init__(
             self, 
@@ -47,9 +46,7 @@ class Alert(ABC):
             'channel': self.channel,
             'data': copy.deepcopy(self.data),
             'timestamp': self.timestamp,
-            'priority': self.priority,
-            'queue_skip': self.queue_skip,
-            'store': self.store
+            'priority': self.priority
         }
     
     def __lt__(self, other):
@@ -83,11 +80,19 @@ class Alert(ABC):
 class GenericAlert(Alert):
     """Generic alert class for handling unknown alert types."""
     queue_skip = True
-    store = True
 
     async def process(self):
         logger.warning(f"Processing generic alert for {self.channel} -> {self.message_id}")
         logger.debug(f"Data: {self.data}")
+    
+    async def store(self):
+        out = copy.deepcopy(self.data)
+        out['timestamp'] = self.timestamp
+        out['message_id'] = self.message_id
+        await self.bot.storage.insert(
+            self.bot.storage.channel_to_table(self.channel),
+            out
+        )
 
 #=============================================================================================
 
@@ -117,17 +122,17 @@ class AlertPriorityQueue(asyncio.PriorityQueue):
     A PriorityQueue that allows viewing and removing specific alerts using unique identifiers.
     Can optionally persist its state to JSON storage.
     """
-    def __init__(self, maxsize: int = 0, storage: Optional['BaseStorage'] = None) -> None:
+    def __init__(self, maxsize = 0, storage = None):
         super().__init__(maxsize=maxsize)
-        self._id_map: Dict[str, Tuple[int, 'Alert']] = {}  # Maps alert_id to (priority, alert)
+        self._id_map = {}  # Maps alert_id to (priority, alert)
         self.storage = storage
 
-    async def _load_state(self, bot: 'TwitchBot') -> None: #type: ignore
+    async def _load_state(self, bot):
         if not self.storage:
             logger.warning("No storage configured for AlertPriorityQueue.")
             return False
         try:
-            saved_items = await self.storage.load_queue()
+            saved_items = await self.storage.load_queue("alerts")
         except json.decoder.JSONDecodeError:
             saved_items = []
 
@@ -153,9 +158,10 @@ class AlertPriorityQueue(asyncio.PriorityQueue):
             await super().put(item)
             self._id_map[alert_id] = item
 
-    async def _save_state(self) -> None:
+    async def _save_state(self):
         if self.storage:
             await self.storage.save_queue(
+                "alerts",
                 [alert.to_dict() for _, alert in self._id_map.values()]
             )
 
@@ -293,7 +299,10 @@ class NotificationHandler:
         }
         alert = AlertFactory.create_alert(bot=self.bot, **event.copy())
         if self.storage and alert.store and "test_" not in event["message_id"]:
-            await self.storage.save_alert(**event)
+            if asyncio.iscoroutinefunction(alert.store):
+                await alert.store()
+            else:
+                alert.store()
         if not alert.queue_skip:
             await self._queue.put(alert)
         else:
@@ -301,7 +310,6 @@ class NotificationHandler:
 
 
 #=============================================================================================
-
 class MaxSizeDict(OrderedDict):
     """ OrderedDict subclass with a 'max_size' which restricts the len. 
     As items are added, the oldest items are removed to make room. """
