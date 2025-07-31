@@ -121,7 +121,7 @@ class SQLiteStorage:
         """ if upsert else f"""
         INSERT INTO {table} ({keys}) VALUES ({placeholders})
         """
-
+        
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute(sql, tuple(data.values()))

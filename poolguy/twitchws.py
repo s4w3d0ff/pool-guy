@@ -86,9 +86,20 @@ class GenericAlert(Alert):
         logger.debug(f"Data: {self.data}")
     
     async def store(self):
-        out = copy.deepcopy(self.data)
-        out['timestamp'] = self.timestamp
-        out['message_id'] = self.message_id
+        out = {}
+        for key, value in copy.deepcopy(self.data).items():
+            if isinstance(value, list):
+                out[key] = json.dumps(value)
+            elif isinstance(value, dict):
+                for k, v in copy.deepcopy(self.data[key]).items():
+                    if isinstance(v, list) or isinstance(v, dict):
+                        out[f'{key}_{k}'] = json.dumps(v)
+                    else:
+                        out[f'{key}_{k}'] = v
+            else:
+                out[key] = value
+        out["timestamp"] = self.timestamp
+        out["message_id"] = self.message_id
         await self.bot.storage.insert(
             self.bot.storage.channel_to_table(self.channel),
             out
