@@ -1,4 +1,5 @@
 import json
+import sys
 import copy
 import asyncio
 import websockets
@@ -13,6 +14,12 @@ from .twitchapi import TwitchApi
 logger = logging.getLogger(__name__)
 
 WSURL = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=600"
+
+# for current func name, specify 0 or no argument.
+# for name of caller of current func, specify 1.
+# for name of caller of caller of current func, specify 2. etc.
+# https://stackoverflow.com/a/31615605/3389859
+_func_name = lambda n=0: sys._getframe(n + 1).f_code.co_name
 
 def convert2epoch(timestampstr):
     return parser.parse(timestampstr).timestamp()

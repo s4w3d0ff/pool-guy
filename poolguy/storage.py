@@ -112,8 +112,12 @@ class SQLiteStorage:
         keys = ', '.join(data.keys())
         placeholders = ', '.join('?' for _ in data)
         updates = ', '.join(f"{k}=excluded.{k}" for k in data)
-
-        conflict_col = "name" if table in ("tokens", "queue", "subpub_versions") else "message_id"
+        if "message_id" in data:
+            conflict_col = "message_id"
+        elif "name" in data:
+            conflict_col = "name"
+        else:
+            conflict_col = data.keys()[0]
 
         sql = f"""
         INSERT INTO {table} ({keys}) VALUES ({placeholders})
