@@ -1,4 +1,5 @@
 import json
+import sys
 import copy
 import asyncio
 import websockets
@@ -7,22 +8,26 @@ import uuid
 from abc import ABC, abstractmethod
 from dateutil import parser
 from collections import OrderedDict
-from typing import List, Tuple, Dict, Any, Optional
+from typing import List, Tuple, Dict, Any
 from .twitchapi import TwitchApi
-from .storage import BaseStorage
-
 
 logger = logging.getLogger(__name__)
 
 WSURL = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=600"
+
+# for current func name, specify 0 or no argument.
+# for name of caller of current func, specify 1.
+# for name of caller of caller of current func, specify 2. etc.
+# https://stackoverflow.com/a/31615605/3389859
+_func_name = lambda n=0: sys._getframe(n + 1).f_code.co_name
 
 def convert2epoch(timestampstr):
     return parser.parse(timestampstr).timestamp()
 
 class Alert(ABC):
     queue_skip = False
-    store = True
     priority = 3
+    store = False
     
     def __init__(
             self, 
@@ -48,9 +53,7 @@ class Alert(ABC):
             'channel': self.channel,
             'data': copy.deepcopy(self.data),
             'timestamp': self.timestamp,
-            'priority': self.priority,
-            'queue_skip': self.queue_skip,
-            'store': self.store
+            'priority': self.priority
         }
     
     def __lt__(self, other):
@@ -84,12 +87,32 @@ class Alert(ABC):
 class GenericAlert(Alert):
     """Generic alert class for handling unknown alert types."""
     queue_skip = True
-    priority = 4
-    
+
     async def process(self):
         logger.warning(f"Processing generic alert for {self.channel} -> {self.message_id}")
         logger.debug(f"Data: {self.data}")
+    
+    async def store(self):
+        out = {}
+        for key, value in copy.deepcopy(self.data).items():
+            if isinstance(value, list):
+                out[key] = json.dumps(value)
+            elif isinstance(value, dict):
+                for k, v in copy.deepcopy(self.data[key]).items():
+                    if isinstance(v, list) or isinstance(v, dict):
+                        out[f'{key}_{k}'] = json.dumps(v)
+                    else:
+                        out[f'{key}_{k}'] = v
+            else:
+                out[key] = value
+        out["timestamp"] = self.timestamp
+        out["message_id"] = self.message_id
+        await self.bot.storage.insert(
+            self.bot.storage.channel_to_table(self.channel),
+            out
+        )
 
+#=============================================================================================
 
 class AlertFactory:
     """Factory class to create the appropriate Alert instance based on event type."""
@@ -111,23 +134,23 @@ class AlertFactory:
             return GenericAlert(bot, message_id, channel, data, timestamp)
 
 #=============================================================================================
+
 class AlertPriorityQueue(asyncio.PriorityQueue):
     """
     A PriorityQueue that allows viewing and removing specific alerts using unique identifiers.
     Can optionally persist its state to JSON storage.
     """
-    def __init__(self, maxsize: int = 0, storage: Optional['BaseStorage'] = None) -> None:
+    def __init__(self, maxsize = 0, storage = None):
         super().__init__(maxsize=maxsize)
-        self._id_map: Dict[str, Tuple[int, 'Alert']] = {}  # Maps alert_id to (priority, alert)
+        self._id_map = {}  # Maps alert_id to (priority, alert)
         self.storage = storage
 
-    async def _load_state(self, bot: 'TwitchBot') -> None: #type: ignore
-        if self.storage is None:
+    async def _load_state(self, bot):
+        if not self.storage:
             logger.warning("No storage configured for AlertPriorityQueue.")
             return False
-        
         try:
-            saved_items = await self.storage.load_queue()
+            saved_items = await self.storage.load_queue("alerts")
         except json.decoder.JSONDecodeError:
             saved_items = []
 
@@ -153,9 +176,10 @@ class AlertPriorityQueue(asyncio.PriorityQueue):
             await super().put(item)
             self._id_map[alert_id] = item
 
-    async def _save_state(self) -> None:
+    async def _save_state(self):
         if self.storage:
             await self.storage.save_queue(
+                "alerts",
                 [alert.to_dict() for _, alert in self._id_map.values()]
             )
 
@@ -221,6 +245,7 @@ class AlertPriorityQueue(asyncio.PriorityQueue):
         return len(self._id_map)
 
 #=============================================================================================
+
 class NotificationHandler:
     def __init__(self, bot, storage):
         self.bot = bot
@@ -292,7 +317,10 @@ class NotificationHandler:
         }
         alert = AlertFactory.create_alert(bot=self.bot, **event.copy())
         if self.storage and alert.store and "test_" not in event["message_id"]:
-            await self.storage.save_alert(**event)
+            if asyncio.iscoroutinefunction(alert.store):
+                await alert.store()
+            else:
+                alert.store()
         if not alert.queue_skip:
             await self._queue.put(alert)
         else:
@@ -316,6 +344,7 @@ class MaxSizeDict(OrderedDict):
         super().__setitem__(key, value)
 
 #========================================================================================
+
 class TwitchWebsocket:
     """ Handles EventSub Websocket connection and subscriptions """
     def __init__(self, bot, channels=None, max_reconnect=None, http=None, *args, **kwargs):
@@ -342,13 +371,13 @@ class TwitchWebsocket:
                     # wait for message
                     message = await self._socket.recv()
                 except:
-                    # something bad happened
                     logger.exception(f"_socket.recv:\n")
                     # break first loop and reconnect if _running
                     break
                 try:
                     # handle message
-                    await self.handle_message(json.loads(message))
+                    #await self.handle_message(json.loads(message))
+                    asyncio.create_task(self.handle_message(json.loads(message)))
                 except:
                     # error in handle_message, still connected
                     logger.exception(f"handle_message:\n{message}\n")
@@ -429,7 +458,8 @@ class TwitchWebsocket:
                 case "session_welcome": 
                     await self.handle_session_welcome(meta, message["payload"])
                 case "session_reconnect": 
-                    await self.handle_session_reconnect(meta, message["payload"])
+                    #await self.handle_session_reconnect(meta, message["payload"])
+                    asyncio.create_task(self.handle_session_reconnect(meta, message["payload"]))
                 case "notification":
                     asyncio.create_task(self.notification_handler(meta, message["payload"]))
                 case "session_keepalive":

@@ -3,8 +3,8 @@ import time
 import logging
 from collections import defaultdict
 from functools import wraps
-from .twitchws import TwitchWebsocket
-from .webserver import route
+from .twitchws import TwitchWebsocket, _func_name
+from .webserver import route, websocket
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +104,38 @@ class TwitchBot:
             if not r[0]['is_sent']:
                 logger.error(f"Message not sent! {r[0]['drop_reason']}")
 
+    async def ws_wait_for_twitch_login(self, ws):
+        """ Helper method to wait for Twitch login while supplying a ping to the websocket """
+        while not self.http.user_id:
+            logger.warning(f"{_func_name(2)}: Websocket waiting for twitch login...")
+            await ws.ping()
+            await asyncio.sleep(10)
+
+    async def ws_hold_connection(self, ws, request, loop_func, wait_for_twitch=False):
+        if wait_for_twitch:
+            await self.ws_wait_for_twitch_login(ws)
+        logger.warning(f"{_func_name(1)}: Websocket connected")
+        while not ws.closed:
+            try:
+                if asyncio.iscoroutinefunction(loop_func):
+                    await loop_func(ws, request)
+                else:
+                    loop_func(ws, request)
+            except ConnectionResetError:
+                logger.warning(f"{_func_name(1)}: WebSocket client forcibly disconnected during send")
+                break
+            except asyncio.TimeoutError:
+                try:
+                    await ws.ping()
+                except Exception as e:
+                    logger.debug(f"{_func_name(1)}: Ping failed\n{e}")
+                    break
+            except Exception as e:
+                logger.error(f"{_func_name(1)}: Unexpected error in loop\n{e}")
+                break
+        ws.exception()
+        logger.warning(f"{_func_name(1)}: Websocket connection closed")
+
     async def get_alert_queue(self):
         return self.ws.notification_handler.current_queue()
     
@@ -164,7 +196,7 @@ def rate_limit(calls=2, period=10, warn_cooldown=5):
                 # Only send warning message every warn_cooldown seconds
                 if current_time - state['last_warning'] > warn_cooldown:
                     wait_time = period - (current_time - state['calls'][0])
-                    await self.http.sendChatMessage(
+                    await self.send_chat(
                         f"@{user['username']} Please wait {wait_time:.1f}s before using this command again.",
                         broadcaster_id=channel["broadcaster_id"]
                     )
@@ -181,7 +213,6 @@ def rate_limit(calls=2, period=10, warn_cooldown=5):
 
 #======================================================================================================================
 #======================================================================================================================
-
 class CommandBot(TwitchBot):
     def __init__(self, cmd_prefix=['!', '~'], *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -244,7 +275,7 @@ class CommandBot(TwitchBot):
                 logger.debug(f"Executed command: {command_name}")
             except Exception as e:
                 logger.error(f"Error executing command {command_name}: {str(e)}")
-                await self.http.sendChatMessage(
+                await self.send_chat(
                     f"Failed to execute command: {command_name}", 
                     broadcaster_id=channel["broadcaster_id"]
                 )
@@ -276,7 +307,7 @@ class CommandBot(TwitchBot):
                 for other in self._commands
             )]
             help_text = f"Bot Prefix: [{', '.join(self._prefix)}]  Available Commands: {', '.join(main_commands)}"
-        await self.http.sendChatMessage(help_text, broadcaster_id=channel["broadcaster_id"])
+        await self.send_chat(help_text, broadcaster_id=channel["broadcaster_id"])
 
 #======================================================================================================================
 #======================================================================================================================
@@ -284,22 +315,30 @@ class UIBot(TwitchBot):
     """Adds a series of routes to serve as the base for an UI """
 
     @route('/queue/current')
-    async def current_queue(self, request):
+    async def _current_queue(self, request):
         queue, paused = await self.get_alert_queue()
         return self.app.response_json({"status": True, "data": queue, "paused": paused})
 
     @route('/queue/remove/{item_id}')
-    async def remove_item_from_queue(self, request):
+    async def _remove_item_from_queue(self, request):
         item_id = request.match_info['item_id']
         await self.remove_from_queue(item_id)
         return self.app.response_json({"status": True, "message": f"Removed item {item_id} from queue"})
 
     @route('/queue/pause')
-    async def pause_queue(self, request):
+    async def _pause_queue(self, request):
         self.ws.notification_handler.pause()
         return self.app.response_json({"status": True, "message": "Queue paused"})
     
     @route('/queue/resume')
-    async def resume_queue(self, request):
+    async def _resume_queue(self, request):
         self.ws.notification_handler.resume()
         return self.app.response_json({"status": True, "message": "Queue resumed"})
+
+    @websocket('/queuews')
+    async def queue_ws(self, ws, request):
+        async def loop(w, r):
+            queue, paused = await self.get_alert_queue()
+            await w.send_json({"status": True, "data": queue, "paused": paused})
+            await asyncio.sleep(0.5)
+        await self.ws_hold_connection(ws, request, loop_func=loop, wait_for_twitch=True)
