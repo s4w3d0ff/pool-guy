@@ -1,11 +1,9 @@
 import json
-import os
 import aiohttp
 import re
 import asyncio
 import logging
 from urllib.parse import urlencode
-from .storage import aioLoadJSON, aioSaveJSON
 from .http import RequestHandler
 
 logger = logging.getLogger(__name__)
@@ -130,7 +128,7 @@ class TwitchApi(RequestHandler):
             for item in o:
                 await self.storage.insert("subpub_versions", item)
             self._init_flag = True
-        out = await self.storage.query("subpub_versions", "WHERE name = ?", (name,))
+        out = await self.storage.query("subpub_versions", where="name = ?", params=(name,))
         return out[0]['version'] if out else None
 
     async def _determine_eventsub_condition(self, event, bid=None):
@@ -139,7 +137,9 @@ class TwitchApi(RequestHandler):
         if bid:
             bid = str(bid)
         match event:
-            case 'channel.chat.message' | 'channel.chat.message_delete' | 'channel.chat.clear_user_messages' | 'channel.chat.notification' | 'channel.chat.clear':
+            case 'channel.chat.message_delete' | 'channel.chat.clear_user_messages' | 'channel.chat.notification' | 'channel.chat.clear':
+                condition = {'broadcaster_user_id': bid or uid, 'user_id': uid}
+            case 'channel.chat.message':
                 condition = {'broadcaster_user_id': bid or uid, 'user_id': uid}
             case 'channel.raid':
                 condition = {'to_broadcaster_user_id': uid}
@@ -165,7 +165,7 @@ class TwitchApi(RequestHandler):
             logger.debug(f'Sending [createEventSub] -> {data}')
             return await self._request("post", apiEndpoints['eventsub'], data=data)
         except Exception as e:
-            logger.error(f"Failed to create EventSub subscription: \n{e}\n\n{data = }")
+            logger.exception(f"Failed to create EventSub subscription: \n")
             raise
 
     async def deleteEventSub(self, id):
@@ -725,16 +725,19 @@ class TwitchApi(RequestHandler):
   
     #=========================================================================
     # Extras ===================================================================
-    async def unsubAllEvents(self):
+    async def unsubAllEvents(self, session_id=None):
         """ Unsubscribe from all events """
         r = await self.getEventSubs()
         tasks = []
+        out = []
         for sub in r['data']:
+            if "session_id" in sub["transport"] and session_id:
+                if session_id == sub["transport"]["session_id"]:
+                    out.append(sub)
             if sub['status'] == "enabled":
                 continue
             else:
-                logger.debug(f"[deleteEventSub] -> {sub['type']} (Reason: '{sub['status']}')")
-                logger.debug(f"{sub['condition']}")
+                logger.info(f"[deleteEventSub](Reason: '{sub['status']}') -> \n{sub['type']}:{sub['condition']} ")
                 tasks.append(asyncio.create_task(self.deleteEventSub(sub['id'])))
         await asyncio.gather(*tasks)
-        logger.warning(f"Removed all inactive EventSub subscriptions")
+        return out

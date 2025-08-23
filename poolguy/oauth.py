@@ -3,7 +3,6 @@ import webbrowser
 import asyncio
 import aiohttp
 import time
-import json
 import logging
 from urllib.parse import urlparse, urlencode
 from aiohttp import web
@@ -79,7 +78,7 @@ class TokenHandler:
 
     async def _get_auth_code(self):
         """ Opens browser to get oauth code to use for token """
-        logger.warning(f"Opening browser to get Oauth code...")
+        logger.warning(f"Getting Twitch Oauth code...")
         if not self.server.is_running():
             await self.server.start()
         self._auth_future = asyncio.Future()
@@ -125,7 +124,7 @@ class TokenHandler:
 
     async def _refresh(self):
         """ Refresh oauth token, get new token if refresh fails """
-        logger.warning(f"Refreshing token...")
+        logger.warning(f"Refreshing Twitch token...")
         # pause 'self.get_token'
         self._refresh_event.clear()
         try:
@@ -141,7 +140,7 @@ class TokenHandler:
                 }
             out = await self._token_request(headers, data)
         except Exception as e:
-            logger.error(f"Refreshing token failed! {e}")
+            logger.error(f"Refreshing Twitch token failed! {e}")
             out = await self._get_new_token()
         # resume 'self.get_token'
         self._refresh_event.set()
@@ -150,7 +149,7 @@ class TokenHandler:
     async def _get_new_token(self):
         """ Get a new oauth token using the oauth code, get code if we dont have one yet """
         await self._get_auth_code()
-        logger.warning(f"Getting new token...")
+        logger.warning(f"Getting twitch new token...")
         data = {
             'client_id': self.client_id,
             'client_secret': self.client_secret,
@@ -167,7 +166,6 @@ class TokenHandler:
         async with aiohttp.ClientSession() as session:
             async with session.get(validateEndoint, headers=heads) as response:
                 auth_check = await response.json()
-                logger.debug(f"Auth validation response: \n{json.dumps(auth_check, indent=2)}")
                 match response.status:
                     case 200:
                         return True, auth_check
