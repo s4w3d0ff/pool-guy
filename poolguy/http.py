@@ -3,7 +3,7 @@ import asyncio
 import logging 
 import time
 from urllib.parse import urlparse
-from .oauth import TokenHandler, WebServer, StorageFactory
+from .core import TokenHandler, WebServer, StorageFactory
 
 logger = logging.getLogger(__name__)
 

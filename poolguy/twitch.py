@@ -4,7 +4,7 @@ import logging
 from collections import defaultdict
 from functools import wraps
 from .twitchws import TwitchWebsocket, _func_name
-from .webserver import route, websocket
+from .core import route, websocket
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +201,7 @@ def rate_limit(calls=2, period=10, warn_cooldown=5):
                     wait_time = period - (current_time - state['calls'][0])
                     await self.send_chat(
                         f"@{user['username']} Please wait {wait_time:.1f}s before using this command again.",
-                        channel_id=channel["broadcaster_id"]
+                        channel["broadcaster_id"]
                     )
                     state['last_warning'] = current_time
                 return

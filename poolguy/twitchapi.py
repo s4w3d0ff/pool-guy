@@ -722,22 +722,3 @@ class TwitchApi(RequestHandler):
                 
         r = await self._request("patch", apiEndpoints['broadcast'], data=json.dumps(data))
         return r
-  
-    #=========================================================================
-    # Extras ===================================================================
-    async def unsubAllEvents(self, session_id=None):
-        """ Unsubscribe from all events """
-        r = await self.getEventSubs()
-        tasks = []
-        out = []
-        for sub in r['data']:
-            if "session_id" in sub["transport"] and session_id:
-                if session_id == sub["transport"]["session_id"]:
-                    out.append(sub)
-            if sub['status'] == "enabled":
-                continue
-            else:
-                logger.info(f"[deleteEventSub](Reason: '{sub['status']}') -> \n{sub['type']}:{sub['condition']} ")
-                tasks.append(asyncio.create_task(self.deleteEventSub(sub['id'])))
-        await asyncio.gather(*tasks)
-        return out
