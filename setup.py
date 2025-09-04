@@ -24,12 +24,9 @@ setup(
         "aiohttp",         # async HTTP server
         "websockets",      # WebSocket client
         "python-dateutil", # date parsing
-        "aiofiles"         # async file editing
+        "aiofiles",        # async file editing
+        "aiosqlite"        # local database
     ],
-    extras_require={
-        'mongodb': ['pymongo'],  # Optional MongoDB storage support
-        'sqlite': ['aiosqlite']  # Optional SQLite support
-    },
     zip_safe=False,
     license="GNU General Public License v3 (GPLv3)",
     platforms=["any"],
@@ -44,3 +41,4 @@ setup(
         "poolguy"
     ]
 )
+
