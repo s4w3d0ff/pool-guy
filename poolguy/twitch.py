@@ -4,7 +4,7 @@ import logging
 from collections import defaultdict
 from functools import wraps
 from .twitchws import TwitchWebsocket, _func_name
-from .webserver import route, websocket
+from .core import route, websocket
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,10 @@ class TwitchBot:
         self._is_running = True
         self._setup()
         await self.before_login()
-        await self.ws.run(paused=paused)
+        asyncio.create_task(self.ws.run(paused=paused))
+        while not self.http.user_id:
+            logging.error("Waiting for twitch outh...")
+            await asyncio.sleep(2)
         await self.after_login()
         if hold:
             await self.hold()
@@ -198,7 +201,7 @@ def rate_limit(calls=2, period=10, warn_cooldown=5):
                     wait_time = period - (current_time - state['calls'][0])
                     await self.send_chat(
                         f"@{user['username']} Please wait {wait_time:.1f}s before using this command again.",
-                        broadcaster_id=channel["broadcaster_id"]
+                        channel["broadcaster_id"]
                     )
                     state['last_warning'] = current_time
                 return
@@ -277,7 +280,7 @@ class CommandBot(TwitchBot):
                 logger.error(f"Error executing command {command_name}: {str(e)}")
                 await self.send_chat(
                     f"Failed to execute command: {command_name}", 
-                    broadcaster_id=channel["broadcaster_id"]
+                    channel_id=channel["broadcaster_id"]
                 )
         else:
             logger.debug(f"Unknown command: {command_name}")
@@ -307,7 +310,7 @@ class CommandBot(TwitchBot):
                 for other in self._commands
             )]
             help_text = f"Bot Prefix: [{', '.join(self._prefix)}]  Available Commands: {', '.join(main_commands)}"
-        await self.send_chat(help_text, broadcaster_id=channel["broadcaster_id"])
+        await self.send_chat(help_text, channel_id=channel["broadcaster_id"])
 
 #======================================================================================================================
 #======================================================================================================================

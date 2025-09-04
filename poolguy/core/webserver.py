@@ -7,6 +7,19 @@ from aiohttp import web
 
 logger = logging.getLogger(__name__)
 
+closeBrowser = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script>function closeWindow() {window.close();};</script>
+</head>
+<body>
+    <button id="closeButton" onclick="closeWindow()">Close Window</button>
+    <script>document.getElementById("closeButton").click();</script>
+</body>
+</html>
+"""
+
 class WebServer:
     """WebServer class for serving web pages and handling requests."""
     def __init__(self, host, port, static_dirs=None, base_dir=None):

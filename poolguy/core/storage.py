@@ -38,94 +38,55 @@ async def aioSaveJSON(data, filename):
 #==================================================================
 #==================================================================
 class SQLiteStorage:
-
-    TABLE_SCHEMAS = {
-        "tokens": ["name", "token_json"],
-        "queue": ["name", "queue_json"],
-        "subpub_versions": ["name", "version"],
-        #"stream_online": ["message_id", "timestamp", "type", "id"],
-        #"channel_bits_use": ["message_id", "timestamp", "user_id", "user_login", "bits", "type", "message"],
-        #"channel_channel_points_custom_reward_redemption_add": ["message_id", "timestamp", "user_id", "user_login", "user_input", "reward_id", "title", "cost", "prompt"],
-        #"channel_ban": ["message_id", "timestamp", "user_id", "user_login", "moderator_user_id", "moderator_user_login", "reason", "ends_at"],
-        #"channel_chat_notification": ["message_id", "timestamp", "notice_type", "chatter_user_id", "chatter_user_login", "chatter_is_anonymous", "color", "data"],
-        #"channel_follow": ["message_id", "timestamp", "user_id", "user_login"],
-        #"channel_hype_train_end": ["message_id", "timestamp", "total", "is_golden_kappa_train", "level", "cooldown_ends_at", "top_contributions"],
-        #"channel_prediction_end": ["message_id", "timestamp", "title", "outcomes", "winning_outcome_id", "status"],
-        #"channel_suspicious_user_message": ["message_id", "timestamp", "user_id", "user_login", "low_trust_status", "shared_ban_channel_ids", "types", "ban_evasion_evaluation", "message"]
-    }
-
     def __init__(self, db_path='db/twitch.db'):
         self.db_path = db_path
-        self._init_flag = False
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-
-    def channel_to_table(self, channel):
-        """
-        Sanitizes the channel name for use as a SQLite table name.
-        Replaces all non-word characters (including .) with underscores.
-        """
-        name = re.sub(r'\W+', '_', channel)
-        return f"{name}"
-
-    async def _init_check(self):
-        if not self._init_flag:
-            await self._init_db()
-            self._init_flag = True
-
-    async def _init_db(self):
-        async with aiosqlite.connect(self.db_path) as db:
-            for table, columns in self.TABLE_SCHEMAS.items():
-                column_defs = ', '.join(f"{col} TEXT" for col in columns)
-                # Primary key on 'name' for tokens and queue tables
-                if table in ("tokens", "queue", "subpub_versions"):
-                    column_defs += ", PRIMARY KEY (name)"
-                else:
-                    column_defs += ", PRIMARY KEY (message_id)"
-                await db.execute(f"CREATE TABLE IF NOT EXISTS {table} ({column_defs});")
-            await db.commit()
+    
+    def _clean_str(self, text):
+        """ Replaces all non-word characters with underscores. """
+        out = re.sub(r'\W+', '_', text)
+        return f"{out}"
 
     async def _create_dynamic_table(self, table: str, columns: list[str]):
         column_defs = ', '.join(f"{col} TEXT" for col in columns)
-        # Use "message_id" or "name" if present, otherwise fallback to first column
-        if "message_id" in columns:
-            column_defs += ", PRIMARY KEY (message_id)"
-        elif "name" in columns:
+        if self._clean_str(table) in ("tokens", "queue", "subpub_versions"):
             column_defs += ", PRIMARY KEY (name)"
+        elif "message_id" in columns:
+            column_defs += ", PRIMARY KEY (message_id)"
         else:
             column_defs += f", PRIMARY KEY ({columns[0]})"
-
         async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(f"CREATE TABLE IF NOT EXISTS {table} ({column_defs});")
+            await db.execute(f"CREATE TABLE IF NOT EXISTS {self._clean_str(table)} ({column_defs});")
             await db.commit()
 
-    async def query(self, table, where="", params=()):
-        await self._init_check()
+    async def query(self, table, where=None, params=()):
         async with aiosqlite.connect(self.db_path) as db:
             db.row_factory = aiosqlite.Row
-            sql = f"SELECT * FROM {table} {where}"
+            sql = f"SELECT * FROM {self._clean_str(table)}"
+            sql += f" WHERE {where}" if where else ""
+            logger.debug(f"query: {sql = }")
             async with db.execute(sql, params) as cursor:
                 return [dict(row) async for row in cursor]
 
-
     async def insert(self, table, data: dict, upsert=True):
-        await self._init_check()
-        keys = ', '.join(data.keys())
+        d_keys = list(data.keys())
+        keys = ', '.join(d_keys)
         placeholders = ', '.join('?' for _ in data)
         updates = ', '.join(f"{k}=excluded.{k}" for k in data)
-        if "message_id" in data:
-            conflict_col = "message_id"
-        elif "name" in data:
+        if self._clean_str(table) in ("tokens", "queue", "subpub_versions"):
             conflict_col = "name"
+        elif "message_id" in data:
+            conflict_col = "message_id"
         else:
-            conflict_col = data.keys()[0]
+            conflict_col = d_keys[0]
 
         sql = f"""
-        INSERT INTO {table} ({keys}) VALUES ({placeholders})
+        INSERT INTO {self._clean_str(table)} ({keys}) VALUES ({placeholders})
         ON CONFLICT({conflict_col}) DO UPDATE SET {updates}
         """ if upsert else f"""
-        INSERT INTO {table} ({keys}) VALUES ({placeholders})
+        INSERT INTO {self._clean_str(table)} ({keys}) VALUES ({placeholders})
         """
-        
+        logger.debug(f"insert: {sql = }")
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 await db.execute(sql, tuple(data.values()))
@@ -137,23 +98,33 @@ class SQLiteStorage:
                 await self.insert(table, data, upsert)
             else:
                 raise
-
-
+    
+    async def delete(self, table, where=None, params=()):
+        sql = f"DELETE FROM {self._clean_str(table)}"
+        sql += f" WHERE {where}" if where else ""
+        logger.debug(f"delete: {sql = }")
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute(sql, params)
+            await db.commit()
+    
     async def save_token(self, name, token):
         await self.insert("tokens", {"name": name, "token_json": json.dumps(token)})
 
     async def get_token(self, name):
-        rows = await self.query("tokens", "WHERE name = ?", (name,))
+        rows = await self.query("tokens", "name = ?", (name,))
         return json.loads(rows[0]["token_json"]) if rows else None
     
     async def load_token(self, name):
-        return await self.get_token(name)
+        try:
+            return await self.get_token(name)
+        except:
+            return False
 
     async def save_queue(self, name, queue):
         await self.insert("queue", {"name": name, "queue_json": json.dumps(queue)})
 
     async def get_queue(self, name):
-        rows = await self.query("queue", "WHERE name = ?", (name,))
+        rows = await self.query("queue", "name = ?", (name,))
         return json.loads(rows[0]["queue_json"]) if rows else None
 
     async def load_queue(self, name):
