@@ -86,13 +86,10 @@ if __name__ == '__main__':
         ],
         channels={
             "channel.chat.message": None
-        }, 
-        storage="json",
+        },
         browser={
             "chrome": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
         },
-        max_retries=30,
-        retry_delay=10,
         alert_objs={
             "channel.chat.message": ChannelChatMessageAlert
         }
