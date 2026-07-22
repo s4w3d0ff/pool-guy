@@ -50,7 +50,7 @@ class TwitchBot:
         await self.before_login()
         asyncio.create_task(self.ws.run(paused=paused))
         while not self.http.user_id:
-            logging.error("Waiting for twitch outh...")
+            logging.error("Waiting for twitch oauth...")
             await asyncio.sleep(2)
         await self.after_login()
         if hold:

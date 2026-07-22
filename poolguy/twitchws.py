@@ -40,6 +40,7 @@ class TwitchWebsocket:
                 await self._socket_loop()
             except Exception as e:
                 logger.error(f"Exception in socket loop:\n{e}")
+                await asyncio.sleep(5)
 
     async def _socket_loop(self):
         logger.info(f"Connected to twitch websocket")

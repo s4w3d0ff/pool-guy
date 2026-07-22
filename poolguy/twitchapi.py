@@ -1,7 +1,6 @@
 import json
 import aiohttp
 import re
-import asyncio
 import logging
 from urllib.parse import urlencode
 from .http import RequestHandler
