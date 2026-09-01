@@ -1,11 +1,91 @@
 import json
-import aiohttp
-import re
 import logging
 from urllib.parse import urlencode
 from .http import RequestHandler
 
 logger = logging.getLogger(__name__)
+
+EVENTSUB_VERSIONS = {
+    "automod.message.hold": "2",
+    "automod.message.update": "2",
+    "automod.settings.update": "1",
+    "automod.terms.update": "1",
+    "channel.ad_break.begin": "1",
+    "channel.ban": "1",
+    "channel.bits.use": "1",
+    "channel.channel_points_automatic_reward_redemption.add": "2",
+    "channel.channel_points_custom_reward.add": "1",
+    "channel.channel_points_custom_reward.remove": "1",
+    "channel.channel_points_custom_reward.update": "1",
+    "channel.channel_points_custom_reward_redemption.add": "1",
+    "channel.channel_points_custom_reward_redemption.update": "1",
+    "channel.charity_campaign.donate": "1",
+    "channel.charity_campaign.progress": "1",
+    "channel.charity_campaign.start": "1",
+    "channel.charity_campaign.stop": "1",
+    "channel.chat.clear": "1",
+    "channel.chat.clear_user_messages": "1",
+    "channel.chat.message": "1",
+    "channel.chat.message_delete": "1",
+    "channel.chat.notification": "1",
+    "channel.chat.user_message_hold": "1",
+    "channel.chat.user_message_update": "1",
+    "channel.chat_settings.update": "1",
+    "channel.cheer": "1",
+    "channel.custom_power_up_redemption.add": "1",
+    "channel.follow": "2",
+    "channel.goal.begin": "1",
+    "channel.goal.end": "1",
+    "channel.goal.progress": "1",
+    "channel.guest_star_guest.update": "beta",
+    "channel.guest_star_session.begin": "beta",
+    "channel.guest_star_session.end": "beta",
+    "channel.guest_star_settings.update": "beta",
+    "channel.hype_train.begin": "2",
+    "channel.hype_train.end": "2",
+    "channel.hype_train.progress": "2",
+    "channel.moderate": "2",
+    "channel.moderator.add": "1",
+    "channel.moderator.remove": "1",
+    "channel.poll.begin": "1",
+    "channel.poll.end": "1",
+    "channel.poll.progress": "1",
+    "channel.prediction.begin": "1",
+    "channel.prediction.end": "1",
+    "channel.prediction.lock": "1",
+    "channel.prediction.progress": "1",
+    "channel.raid": "1",
+    "channel.shared_chat.begin": "1",
+    "channel.shared_chat.end": "1",
+    "channel.shared_chat.update": "1",
+    "channel.shield_mode.begin": "1",
+    "channel.shield_mode.end": "1",
+    "channel.shoutout.create": "1",
+    "channel.shoutout.receive": "1",
+    "channel.subscribe": "1",
+    "channel.subscription.end": "1",
+    "channel.subscription.gift": "1",
+    "channel.subscription.message": "1",
+    "channel.suspicious_user.message": "1",
+    "channel.suspicious_user.update": "1",
+    "channel.unban": "1",
+    "channel.unban_request.create": "1",
+    "channel.unban_request.resolve": "1",
+    "channel.update": "2",
+    "channel.vip.add": "1",
+    "channel.vip.remove": "1",
+    "channel.warning.acknowledge": "1",
+    "channel.warning.send": "1",
+    "conduit.shard.disabled": "1",
+    "drop.entitlement.grant": "1",
+    "extension.bits_transaction.create": "1",
+    "stream.offline": "1",
+    "stream.online": "1",
+    "user.authorization.grant": "1",
+    "user.authorization.revoke": "1",
+    "user.update": "1",
+    "user.whisper.message": "1",
+}
 
 apiUrlPrefix = "https://api.twitch.tv/helix"
 apiEndpoints = {
@@ -56,52 +136,10 @@ apiEndpoints = {
     "shield_mode": f"{apiUrlPrefix}/moderation/shield_mode"
 }
 
-async def fetch_eventsub_versions(eventsubdocurl="https://dev.twitch.tv/docs/eventsub/eventsub-subscription-types/"):
-    """Fetch and parse Twitch Eventsub documentation to extract event channels. This is dumb, but it works for now."""
-    # Fetch HTML content
-    async with aiohttp.ClientSession() as session:
-        async with session.get(eventsubdocurl) as response:
-            logger.info(f"[GET] {eventsubdocurl} [{response.status}]")
-            if response.status != 200:
-                raise Exception("Failed to fetch webpage")
-            html_content = await response.text()
-
-    # Locate the `<tbody>` section
-    h1_pattern = r'<h1 id="subscription-types">Subscription Types</h1>'
-    tbody_pattern = r'<tbody>(.*?)</tbody>'
-    tbody_match = re.search(f'{h1_pattern}.*?{tbody_pattern}', html_content, re.S)
-
-    if not tbody_match:
-        logger.error("Could not locate the <tbody> section under Subscription Types.")
-        raise ValueError("Unable to locate the <tbody> section under Subscription Types.")
-    
-    out = []
-    tbody_content = tbody_match.group(1)
-    # Extract rows from the `<tbody>` section
-    rows = re.findall(r'<tr>(.*?)</tr>', tbody_content, re.S)
-    logger.debug(f"Extracted rows: {rows}")
-    for row in rows:
-        # Extract text from <code> tags, ignoring attributes like class
-        codes = re.findall(r'<code[^>]*>(.*?)</code>', row)
-        logger.debug(f"Extracted codes from row: {codes}")
-        if len(codes) >= 2:
-            subtype, version = codes[0], codes[1]
-            if len(subtype) > 4 and len(version) < 5:
-                out.append({
-                    "name": subtype,
-                    "version": version
-                })
-    if not out:
-        logger.error(f"No valid subscription types found. Rows extracted: {rows}")
-        raise ValueError("No valid subscription types found.")
-    return out
-
 
 class TwitchApi(RequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._init_flag = False
-        
     async def _continuePage(self, method, url, page, **kwargs):
         """ Helper function to handle pagination in Twitch API calls """
         out = []
@@ -119,59 +157,207 @@ class TwitchApi(RequestHandler):
         
     #============================================================================
     # EventSub Methods ================================================================
+    BROADCASTER_ONLY_EVENTS = (
+        'channel.ad_break.begin',
+        'channel.ban',
+        'channel.bits.use',
+        'channel.channel_points_automatic_reward_redemption.add',
+        'channel.channel_points_custom_reward.add',
+        'channel.channel_points_custom_reward.remove',
+        'channel.channel_points_custom_reward.update',
+        'channel.channel_points_custom_reward_redemption.add',
+        'channel.channel_points_custom_reward_redemption.update',
+        'channel.charity_campaign.donate',
+        'channel.charity_campaign.progress',
+        'channel.charity_campaign.start',
+        'channel.charity_campaign.stop',
+        'channel.cheer',
+        'channel.custom_power_up_redemption.add',
+        'channel.goal.begin',
+        'channel.goal.end',
+        'channel.goal.progress',
+        'channel.hype_train.begin',
+        'channel.hype_train.end',
+        'channel.hype_train.progress',
+        'channel.moderator.add',
+        'channel.moderator.remove',
+        'channel.poll.begin',
+        'channel.poll.progress',
+        'channel.poll.end',
+        'channel.prediction.begin',
+        'channel.prediction.progress',
+        'channel.prediction.lock',
+        'channel.prediction.end',
+        'channel.shared_chat.begin',
+        'channel.shared_chat.update',
+        'channel.shared_chat.end',
+        'channel.subscribe',
+        'channel.subscription.end',
+        'channel.subscription.gift',
+        'channel.subscription.message',
+        'channel.unban',
+        'channel.update',
+        'channel.vip.add',
+        'channel.vip.remove',
+        'stream.online',
+        'stream.offline',
+    )
+
+    BROADCASTER_MODERATOR_EVENTS = (
+        'automod.message.hold',
+        'automod.message.update',
+        'automod.settings.update',
+        'automod.terms.update',
+        'channel.follow',
+        'channel.guest_star_session.begin',
+        'channel.guest_star_session.end',
+        'channel.guest_star_guest.update',
+        'channel.guest_star_settings.update',
+        'channel.moderate',
+        'channel.shield_mode.begin',
+        'channel.shield_mode.end',
+        'channel.shoutout.create',
+        'channel.shoutout.receive',
+        'channel.suspicious_user.message',
+        'channel.suspicious_user.update',
+        'channel.unban_request.create',
+        'channel.unban_request.resolve',
+        'channel.warning.acknowledge',
+        'channel.warning.send',
+    )
+
+    CHAT_USER_EVENTS = (
+        'channel.chat.clear',
+        'channel.chat.clear_user_messages',
+        'channel.chat.message',
+        'channel.chat.message_delete',
+        'channel.chat.notification',
+        'channel.chat.user_message_hold',
+        'channel.chat.user_message_update',
+        'channel.chat_settings.update',
+    )
+
+    NO_AUTH_REQUIRED_EVENTS = (
+        'channel.raid',
+        'channel.shared_chat.begin',
+        'channel.shared_chat.end',
+        'channel.shared_chat.update',
+        'channel.update',
+        'stream.offline',
+        'stream.online',
+    )
+
+    EVENTSUB_MAX_TOTAL_COST_DEFAULT = 10
+
     async def _get_eventsub_version(self, name):
-        """Get eventsub version by name, updates once per initialization."""
-        if not self._init_flag:
-            o = await fetch_eventsub_versions()
-            logger.debug(f"{o = }")
-            for item in o:
-                await self.storage.insert("subpub_versions", item)
-            self._init_flag = True
+        """Get eventsub version by name from the static map, storage as fallback."""
+        if name in EVENTSUB_VERSIONS:
+            return EVENTSUB_VERSIONS[name]
         out = await self.storage.query("subpub_versions", where="name = ?", params=(name,))
         return out[0]['version'] if out else None
 
+    async def _sync_eventsub_costs(self):
+        """Persist the worst-case cost of every known event type to storage."""
+        for name in EVENTSUB_VERSIONS:
+            cost = 1 if name in self.NO_AUTH_REQUIRED_EVENTS else 0
+            await self.storage.insert(
+                "eventsub_costs", {"name": name, "cost": str(cost)}
+            )
+
+    async def _eventsub_cost(self, event):
+        """Worst-case subscription cost: no-auth-required types count 1 unless authorized."""
+        if not await self.storage.query("eventsub_costs"):
+            await self._sync_eventsub_costs()
+        rows = await self.storage.query(
+            "eventsub_costs", where="name = ?", params=(event,)
+        )
+        return int(rows[0]["cost"]) if rows else 0
+
+    async def _eventsub_budget_key(self):
+        client_id = getattr(self, "client_id", None) or "unknown"
+        user_id = self.user_id or "no_user"
+        return f"{client_id}_{user_id}"
+
+    async def _sync_eventsub_budget(self, response):
+        """Persist authoritative cost totals returned by Twitch in subscription responses."""
+        if not isinstance(response, dict) or "total_cost" not in response:
+            return
+        await self.storage.insert("eventsub_budget", {
+            "name": await self._eventsub_budget_key(),
+            "total_cost": str(int(response["total_cost"])),
+            "max_total_cost": str(
+                int(response.get("max_total_cost", self.EVENTSUB_MAX_TOTAL_COST_DEFAULT))
+            ),
+        })
+
+    async def _check_eventsub_budget(self, event):
+        """Raise before POST when the worst-case cost would exceed the remaining budget."""
+        cost = await self._eventsub_cost(event)
+        if not cost:
+            return
+        key = await self._eventsub_budget_key()
+        rows = await self.storage.query(
+            "eventsub_budget", where="name = ?", params=(key,)
+        )
+        total = int(rows[0]["total_cost"]) if rows else 0
+        max_total = (
+            int(rows[0]["max_total_cost"]) if rows
+            else self.EVENTSUB_MAX_TOTAL_COST_DEFAULT
+        )
+        if total + cost > max_total:
+            raise ValueError(
+                f"EventSub budget exhausted for {key}: total {total}/{max_total}, "
+                f"requested cost {cost} for {event}"
+            )
+
     async def _determine_eventsub_condition(self, event, bid=None):
-        """Determine the event condition based on the event type."""
+        """Determine the event condition based on the event type per spec."""
         uid = str(self.user_id)
         if bid:
             bid = str(bid)
         match event:
-            case 'channel.chat.message_delete' | 'channel.chat.clear_user_messages' | 'channel.chat.notification' | 'channel.chat.clear':
-                condition = {'broadcaster_user_id': bid or uid, 'user_id': uid}
-            case 'channel.chat.message':
-                condition = {'broadcaster_user_id': bid or uid, 'user_id': uid}
+            case e if e in self.BROADCASTER_ONLY_EVENTS:
+                return {'broadcaster_user_id': bid or uid}
+            case e if e in self.BROADCASTER_MODERATOR_EVENTS:
+                return {'broadcaster_user_id': bid or uid, 'moderator_user_id': uid}
+            case e if e in self.CHAT_USER_EVENTS:
+                return {'broadcaster_user_id': bid or uid, 'user_id': uid}
             case 'channel.raid':
-                condition = {'to_broadcaster_user_id': uid}
-            case 'channel.follow' | 'channel.shield_mode.begin' | 'channel.shield_mode.end' | 'channel.suspicious_user.message':
-                condition = {'broadcaster_user_id': bid or uid, 'moderator_user_id': uid}
-            case 'user.update':
-                condition = {'user_id': uid}
-            case 'user.authorization.grant' | 'user.authorization.revoke':
-                condition = {'client_id': str(self.client_id)}
+                return {'to_broadcaster_user_id': uid}
+            case 'user.update' | 'user.whisper.message':
+                return {'user_id': uid}
+            case 'user.authorization.grant' | 'user.authorization.revoke' | 'conduit.shard.disabled':
+                return {'client_id': str(self.client_id)}
+            case 'extension.bits_transaction.create':
+                return {'extension_client_id': str(self.client_id)}
             case _:
-                condition = {'broadcaster_user_id': bid or uid}
-        return condition
+                logger.error(f"Unsupported eventsub type for condition: {event}")
+                raise ValueError(f"Cannot determine condition for eventsub type: {event}")
 
     async def createEventSub(self, event, session_id, bid=None):
         """ Create an EventSub subscription """
-        try:
-            data = json.dumps({
-                "type": event,
-                "version": await self._get_eventsub_version(event),
-                "condition": await self._determine_eventsub_condition(event, bid),
-                "transport": {'method': 'websocket', 'session_id': session_id}
-            })
-            logger.debug(f'Sending [createEventSub] -> {data}')
-            return await self._request("post", apiEndpoints['eventsub'], data=data)
-        except Exception as e:
-            logger.exception(f"Failed to create EventSub subscription: \n")
-            raise
+        version = await self._get_eventsub_version(event)
+        if not version:
+            logger.error(f"No known version for eventsub type: {event}")
+            raise ValueError(f"Unknown eventsub type: {event}")
+        await self._check_eventsub_budget(event)
+        data = json.dumps({
+            "type": event,
+            "version": version,
+            "condition": await self._determine_eventsub_condition(event, bid),
+            "transport": {'method': 'websocket', 'session_id': session_id}
+        })
+        logger.debug(f'Sending [createEventSub] -> {data}')
+        r = await self._request("post", apiEndpoints['eventsub'], data=data)
+        await self._sync_eventsub_budget(r)
+        return r
 
     async def deleteEventSub(self, id):
         try:
             r = await self._request("delete", f"{apiEndpoints['eventsub']}?id={id}")
             return True
-        except:
+        except Exception as e:
+            logger.error(f"Failed to delete eventsub subscription {id}: {e}")
             return False
 
     async def getEventSubs(self, status=None, type=None):
@@ -181,6 +367,7 @@ class TwitchApi(RequestHandler):
         if type:
             params["type"] = type
         r = await self._request("get", apiEndpoints['eventsub'], params=params)
+        await self._sync_eventsub_budget(r)
         return r
 
     #============================================================================
