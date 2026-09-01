@@ -7,6 +7,7 @@ import websockets
 import logging
 from .eventsub import NotificationHandler, convert2epoch
 from .twitchapi import TwitchApi
+from .core.logctx import new_request_id, _request_id
 
 _func_name = lambda n=0: sys._getframe(n + 1).f_code.co_name
 
@@ -53,6 +54,7 @@ class TwitchWebsocket:
                 logger.error(f"Twitch websocket connection error:\n {e}")
                 break
             try:
+                _request_id.set(new_request_id())
                 await self.handle_message(json.loads(message))
             except asyncio.CancelledError:
                 raise

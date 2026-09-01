@@ -5,6 +5,7 @@ import logging
 import time
 from urllib.parse import urlparse
 from .core import TokenHandler, WebServer, StorageFactory
+from .core.logctx import new_request_id, _request_id
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,8 @@ class RequestHandler:
 
     async def _request(self, method, url, *args, **kwargs):
         """Handles API requests with retry logic for expired tokens or rate limits."""
+        if not _request_id.get():
+            _request_id.set(new_request_id())
         wait = self._ratelimit_reset_at - time.time()
         if wait > 0:
             logger.debug(f"Rate limit budget exhausted, waiting {wait:.1f}s until reset")

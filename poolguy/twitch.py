@@ -5,6 +5,7 @@ from collections import defaultdict
 from functools import wraps
 from .twitchws import TwitchWebsocket, _func_name
 from .core import route, websocket
+from .core.logctx import install as install_request_logging
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ class TwitchBot:
         self.retry_delay = retry_delay
         
     def _setup(self):
+        install_request_logging()
         self.ws = TwitchWebsocket(bot=self, **self._twitch_config)
         self.http = self.ws.http
         self.app = self.ws.http.server
