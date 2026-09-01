@@ -133,7 +133,12 @@ apiEndpoints = {
     "users_follows": f"{apiUrlPrefix}/users/follows",
     "channel_vips": f"{apiUrlPrefix}/channels/vips",
     "blocked_terms": f"{apiUrlPrefix}/moderation/blocked_terms",
-    "shield_mode": f"{apiUrlPrefix}/moderation/shield_mode"
+    "shield_mode": f"{apiUrlPrefix}/moderation/shield_mode",
+    "automod_messages": f"{apiUrlPrefix}/moderation/automod/message",
+    "automod_settings": f"{apiUrlPrefix}/moderation/automod/settings",
+    "guest_star_settings": f"{apiUrlPrefix}/guest_star/channel_settings",
+    "guest_star_session": f"{apiUrlPrefix}/guest_star/session",
+    "guest_star_invites": f"{apiUrlPrefix}/guest_star/invites"
 }
 
 
@@ -602,6 +607,110 @@ class TwitchApi(RequestHandler):
         r = await self._request("delete", apiEndpoints['ban'], params=params)
         return r['data']
         
+    #============================================================================
+    # AutoMod Methods ================================================================
+    async def manageHeldAutomodMessage(self, msg_id, action):
+        """ Allow or deny a message held by AutoMod (action ALLOW/DENY) """
+        data = {
+            "user_id": self.user_id,
+            "msg_id": msg_id,
+            "action": action
+        }
+        r = await self._request("post", apiEndpoints['automod_messages'], data=json.dumps(data))
+        return r['data']
+
+    async def getAutomodSettings(self, broadcaster_id=None, moderator_id=None):
+        """ Get the AutoMod settings for a channel """
+        params = {
+            "broadcaster_id": broadcaster_id or self.user_id,
+            "moderator_id": moderator_id or self.user_id
+        }
+        r = await self._request("get", apiEndpoints['automod_settings'], params=params)
+        return r['data']
+
+    async def updateAutomodSettings(self, settings, broadcaster_id=None, moderator_id=None):
+        """ Update AutoMod settings; PUT is a full overwrite so pass complete field set """
+        params = {
+            "broadcaster_id": broadcaster_id or self.user_id,
+            "moderator_id": moderator_id or self.user_id
+        }
+        r = await self._request("put", apiEndpoints['automod_settings'], params=params, data=json.dumps(settings))
+        return r['data']
+
+    #============================================================================
+    # Guest Star Methods ================================================================
+    async def getGuestStarSettings(self, broadcaster_id=None, moderator_id=None):
+        """ Get the Guest Star channel settings (beta) """
+        params = {
+            "broadcaster_id": broadcaster_id or self.user_id,
+            "moderator_id": moderator_id or self.user_id
+        }
+        r = await self._request("get", apiEndpoints['guest_star_settings'], params=params)
+        return r
+
+    async def updateGuestStarSettings(self, settings=None, broadcaster_id=None):
+        """ Update the Guest Star channel settings (beta); body fields optional """
+        params = {"broadcaster_id": broadcaster_id or self.user_id}
+        data = json.dumps(settings or {})
+        r = await self._request("put", apiEndpoints['guest_star_settings'], params=params, data=data)
+        return r
+
+    async def getGuestStarSession(self, broadcaster_id=None, moderator_id=None):
+        """ Get the active Guest Star session (beta) """
+        params = {
+            "broadcaster_id": broadcaster_id or self.user_id,
+            "moderator_id": moderator_id or self.user_id
+        }
+        r = await self._request("get", apiEndpoints['guest_star_session'], params=params)
+        return r['data']
+
+    async def createGuestStarSession(self, broadcaster_id=None):
+        """ Create a Guest Star session (beta); broadcaster must be in the call interface """
+        params = {"broadcaster_id": broadcaster_id or self.user_id}
+        r = await self._request("post", apiEndpoints['guest_star_session'], params=params)
+        return r['data']
+
+    async def endGuestStarSession(self, session_id=None, broadcaster_id=None):
+        """ End a Guest Star session (beta) """
+        params = {
+            "broadcaster_id": broadcaster_id or self.user_id,
+            "session_id": session_id
+        }
+        r = await self._request("delete", apiEndpoints['guest_star_session'], params=params)
+        return r['data']
+
+    async def getGuestStarInvites(self, session_id=None, broadcaster_id=None, moderator_id=None):
+        """ Get pending Guest Star invites for a session (beta) """
+        params = {
+            "broadcaster_id": broadcaster_id or self.user_id,
+            "moderator_id": moderator_id or self.user_id,
+            "session_id": session_id
+        }
+        r = await self._request("get", apiEndpoints['guest_star_invites'], params=params)
+        return r['data']
+
+    async def sendGuestStarInvite(self, user_id=None, session_id=None, broadcaster_id=None, moderator_id=None):
+        """ Send a Guest Star invite to a user (beta) """
+        params = {
+            "broadcaster_id": broadcaster_id or self.user_id,
+            "moderator_id": moderator_id or self.user_id,
+            "session_id": session_id,
+            "user_id": user_id
+        }
+        r = await self._request("post", apiEndpoints['guest_star_invites'], params=params)
+        return r
+
+    async def deleteGuestStarInvite(self, user_id=None, session_id=None, broadcaster_id=None, moderator_id=None):
+        """ Revoke a pending Guest Star invite (beta) """
+        params = {
+            "broadcaster_id": broadcaster_id or self.user_id,
+            "moderator_id": moderator_id or self.user_id,
+            "session_id": session_id,
+            "user_id": user_id
+        }
+        r = await self._request("delete", apiEndpoints['guest_star_invites'], params=params)
+        return r
+
     #============================================================================
     # Moderator Methods ================================================================
     async def getModerators(self, broadcaster_id=None):
