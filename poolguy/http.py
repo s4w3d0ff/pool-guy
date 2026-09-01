@@ -79,7 +79,10 @@ class RequestHandler:
                 match response.status:
                     case 401:
                         logger.error("Token expired, refreshing...")
-                        await self.token._refresh()
+                        old_token = (self.token._token or {}).get("access_token")
+                        new_token = await self.token._refresh()
+                        if not new_token or new_token.get("access_token") == old_token:
+                            raise Exception(f"Twitch auth refresh failed for {url}, token unchanged")
                         kwargs['headers'] = await self._headers()
                         return await self._request(method, url, *args, **kwargs)
                     case 429:
