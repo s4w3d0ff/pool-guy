@@ -5,7 +5,6 @@ import logging
 import uuid
 from abc import ABC, abstractmethod
 from dateutil import parser
-from collections import OrderedDict
 from typing import List, Tuple, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -235,23 +234,6 @@ class AlertPriorityQueue(asyncio.PriorityQueue):
 
     def __len__(self) -> int:
         return len(self._id_map)
-
-
-#=============================================================================================
-class MaxSizeDict(OrderedDict):
-    """ OrderedDict subclass with a 'max_size' which restricts the len. 
-    As items are added, the oldest items are removed to make room. """
-    def __init__(self, max_size):
-        super().__init__()
-        self.max_size = max_size
-    
-    def __setitem__(self, key, value):
-        if key in self:
-            self.move_to_end(key)
-        else:
-            if len(self) >= self.max_size:
-                self.popitem(last=False)
-        super().__setitem__(key, value)
 
 
 #=============================================================================================
