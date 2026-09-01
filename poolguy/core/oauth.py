@@ -16,6 +16,7 @@ tokenEndpoint = "https://id.twitch.tv/oauth2/token"
 oauthEndpoint = "https://id.twitch.tv/oauth2/authorize"
 validateEndoint = "https://id.twitch.tv/oauth2/validate"
 TOKEN_NAME = "twitch"
+APP_TOKEN_NAME = "twitch_app"
 REFRESH_FAILURE_LIMIT = 5
 REFRESH_BACKOFF_BASE_SECONDS = 10
 REFRESH_BACKOFF_MAX_SECONDS = 240
@@ -56,6 +57,7 @@ class TokenHandler:
         self.user_id = None
         self._granted_scopes = ()
         self._token_lock = asyncio.Lock()
+        self._app_lock = asyncio.Lock()
         self._refresh_event = asyncio.Event()
         self._refresh_task = None
         self._state = None
@@ -179,6 +181,29 @@ class TokenHandler:
             }
         heads = {'Accept': 'application/json'}
         return await self._token_request(heads, data)
+
+    async def get_app_token(self):
+        if not self.client_secret:
+            raise ValueError(f"Client secret required for client credentials grant!")
+        async with self._app_lock:
+            app = await self.storage.load_token(APP_TOKEN_NAME)
+            if app and app.get("access_time", 0) + int(app["expires_in"]) - 60 > time.time():
+                return app
+            data = {
+                'client_id': self.client_id,
+                'client_secret': self.client_secret,
+                'grant_type': 'client_credentials'
+                }
+            heads = {'Accept': 'application/json'}
+            async with aiohttp.ClientSession() as session:
+                async with session.post(tokenEndpoint, headers=heads, data=data) as resp:
+                    if resp.status != 200:
+                        raise Exception(f"App token request failed: {await resp.text()}")
+                    app = await resp.json()
+            app["token_type"] = "app"
+            app["access_time"] = time.time()
+            await self.storage.save_token(APP_TOKEN_NAME, app)
+            return app
 
     async def _validate_auth(self):
         logger.info(f'Validating twitch token...')
