@@ -43,6 +43,7 @@ class RequestHandler:
                 browser=browser
             )
         self.user_id = None
+        self._ratelimit_reset_at = 0
 
     async def shutdown(self):
         try:
@@ -72,10 +73,18 @@ class RequestHandler:
 
     async def _request(self, method, url, *args, **kwargs):
         """Handles API requests with retry logic for expired tokens or rate limits."""
+        wait = self._ratelimit_reset_at - time.time()
+        if wait > 0:
+            logger.debug(f"Rate limit budget exhausted, waiting {wait:.1f}s until reset")
+            await asyncio.sleep(wait)
         kwargs['headers'] = await self._headers()
         async with aiohttp.ClientSession() as session:
             async with session.request(method, url, *args, **kwargs) as response:
                 logger.debug(f"[{method}] {url} {kwargs} [{response.status}]")
+                remaining = response.headers.get('Ratelimit-Remaining')
+                reset = response.headers.get('Ratelimit-Reset')
+                if remaining == '0' and reset is not None:
+                    self._ratelimit_reset_at = int(reset) + 1
                 match response.status:
                     case 401:
                         logger.error("Token expired, refreshing...")
