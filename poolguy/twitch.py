@@ -81,7 +81,7 @@ class TwitchBot:
         while self._is_running:
             try:
                 await asyncio.sleep(1)
-            except:
+            except (asyncio.CancelledError, OSError):
                 pass
                 
     async def add_task(self, coro, *args, **kwargs):

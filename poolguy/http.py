@@ -110,8 +110,8 @@ class RequestHandler:
                     case "get" | "post":
                         try:
                             return await response.json()
-                        except:
-                            logger.warning("JSON decode failed. Returned full response!")
+                        except (aiohttp.ContentTypeError, json.JSONDecodeError) as e:
+                            logger.warning(f"JSON decode failed for {url}: {e}. Returning raw response!")
                             return response
                     case _:
                         return response

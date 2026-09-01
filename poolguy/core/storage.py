@@ -117,7 +117,8 @@ class SQLiteStorage:
     async def load_token(self, name):
         try:
             return await self.get_token(name)
-        except:
+        except Exception as e:
+            logger.exception(f"Failed to load token '{name}': {e}")
             return False
 
     async def save_queue(self, name, queue):

@@ -142,7 +142,8 @@ class AlertPriorityQueue(asyncio.PriorityQueue):
             return False
         try:
             saved_items = await self.storage.load_queue("alerts")
-        except:
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            logger.exception(f"Corrupt alert queue state in storage: {e}")
             saved_items = []
 
         if not saved_items:
@@ -281,7 +282,7 @@ class NotificationHandler:
                 pass
             except asyncio.CancelledError:
                 self._running = False
-            except:
+            except Exception:
                 logger.exception("NotificationHandler._loop:\n")
         logger.warning(f"NotificationHandler._loop stopped!")
 
