@@ -434,7 +434,7 @@ class TwitchApi(RequestHandler):
         data = {
             "broadcaster_id": broadcaster_id or self.user_id,
             "sender_id": self.user_id,
-            "message": message[:399] # 400 char limit
+            "message": message[:500] # 500 char limit
         }
         r = await self._request("post", apiEndpoints['chat'], data=json.dumps(data))
         return r['data']
