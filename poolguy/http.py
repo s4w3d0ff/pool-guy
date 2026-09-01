@@ -1,11 +1,15 @@
 import aiohttp
 import asyncio
+import json
 import logging 
 import time
 from urllib.parse import urlparse
 from .core import TokenHandler, WebServer, StorageFactory
 
 logger = logging.getLogger(__name__)
+
+BOT_NAME = "pool-guy"
+BOT_VERSION = "0.1.9"
 
 class RequestHandler:
     def __init__(
@@ -68,7 +72,8 @@ class RequestHandler:
         return {
             'Client-ID': self.client_id,
             'Content-Type': 'application/json',
-            'Authorization': f'Bearer {token["access_token"]}'
+            'Authorization': f'Bearer {token["access_token"]}',
+            'User-Agent': f"{BOT_NAME}/{BOT_VERSION}"
         }
 
     async def _request(self, method, url, *args, **kwargs):
