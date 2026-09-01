@@ -1,6 +1,5 @@
 import json
 import logging
-from urllib.parse import urlencode
 from .http import RequestHandler
 
 logger = logging.getLogger(__name__)
@@ -145,17 +144,13 @@ apiEndpoints = {
 class TwitchApi(RequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-    async def _continuePage(self, method, url, page, **kwargs):
+    async def _continuePage(self, method, url, page, params=None):
         """ Helper function to handle pagination in Twitch API calls """
         out = []
         while "cursor" in page:
-            if 'params' in kwargs:
-                kwargs['params']['after'] = page['cursor']
-            if 'data' in kwargs:
-                data = json.loads(kwargs['data'])
-                data['after'] = page['cursor']
-                kwargs['data'] = json.dumps(data)
-            r = await self._request(method, url, **kwargs)
+            next_params = dict(params or {})
+            next_params['after'] = page['cursor']
+            r = await self._request(method, url, params=next_params)
             out += r['data']
             page = r['pagination']
         return out
@@ -890,14 +885,12 @@ class TwitchApi(RequestHandler):
     # Stream Methods ================================================================
     async def getStreams(self, first=None, **kwargs):
         """ Get streams """
-        method = "get"
-        url = apiEndpoints['streams']
-        kwargs['first'] = first or 100
-        query_string = urlencode(kwargs, doseq=True)
-        r = await self._request(method, f"{url}?{query_string}")
+        params = dict(kwargs)
+        params['first'] = first or 100
+        r = await self._request("get", apiEndpoints['streams'], params=params)
         out = r['data']
         if 'cursor' in r['pagination'] and not first:
-            out += await self._continuePage(method, f"{url}?{query_string}", r['pagination'], params=kwargs)
+            out += await self._continuePage("get", apiEndpoints['streams'], r['pagination'], params=params)
         return out
 
     async def getFollowedStreams(self, user_id=None, first=None):
@@ -947,7 +940,7 @@ class TwitchApi(RequestHandler):
                 params["user_id"] = [user_id]  # Single ID as list
         r = await self._request(method, url, params=params)
         out = r['data']
-        if 'pagination' in r and 'cursor' in r['pagination'] and not first:
+        if 'cursor' in r['pagination'] and not first:
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
 
