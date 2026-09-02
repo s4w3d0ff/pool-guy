@@ -12,6 +12,15 @@ logger = logging.getLogger(__name__)
 BOT_NAME = "pool-guy"
 BOT_VERSION = "0.1.9"
 
+
+class ApiRequestError(Exception):
+    def __init__(self, status, message, url=None):
+        super().__init__(f"Twitch API request failed with HTTP {status}: {message}")
+        self.status = status
+        self.message = message
+        self.url = url
+
+
 class RequestHandler:
     def __init__(
             self, 
@@ -108,7 +117,20 @@ class RequestHandler:
                         logger.warning(f"Rate limited! [{response.headers["X-Cache"]}] {wait_time = }")
                         await asyncio.sleep(wait_time)
                         return await self._request(method, url, *args, **kwargs)
-                response.raise_for_status()
+                try:
+                    response.raise_for_status()
+                except aiohttp.ClientResponseError as e:
+                    body = await response.text()
+                    message = body[:500] if body else str(e)
+                    try:
+                        parsed = json.loads(body)
+                        if isinstance(parsed, dict):
+                            parts = [str(parsed.get(key)) for key in ("error", "message") if parsed.get(key)]
+                            if parts:
+                                message = ": ".join(parts)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                    raise ApiRequestError(response.status, message, url=url) from e
                 match method.lower():
                     case "get" | "post":
                         try:
