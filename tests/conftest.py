@@ -41,11 +41,12 @@ class FakeStorage:
 
 
 def make_api():
-    from poolguy.twitchapi import TwitchApi
+    from poolguy.twitchapi import TwitchApi, apiEndpoints
     api = TwitchApi.__new__(TwitchApi)
     api.user_id = "12345"
     api.client_id = "client-abc"
     api.storage = FakeStorage()
+    api.apiEndpoints = dict(apiEndpoints)
     return api
 
 
