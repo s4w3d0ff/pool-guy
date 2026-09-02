@@ -414,7 +414,7 @@ class TwitchApi(RequestHandler):
             params["first"] = first
         r = await self._request(method, url, params=params)
         out = r['data']
-        if 'cursor' in r['pagination'] and not first:
+        if 'cursor' in r['pagination']:
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
 
@@ -427,7 +427,7 @@ class TwitchApi(RequestHandler):
             params["first"] = first
         r = await self._request(method, url, params=params)
         out = r['data']
-        if 'cursor' in r['pagination'] and not first:
+        if 'cursor' in r['pagination']:
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
 
@@ -511,7 +511,7 @@ class TwitchApi(RequestHandler):
             params["id"] = clip_id
         r = await self._request(method, url, params=params)
         out = r['data']
-        if 'cursor' in r['pagination'] and not first:
+        if 'cursor' in r['pagination']:
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
         
@@ -552,7 +552,7 @@ class TwitchApi(RequestHandler):
         params = {"first": first or 20}
         r = await self._request(method, url, params=params)
         out = r['data']
-        if 'cursor' in r['pagination'] and not first:
+        if 'cursor' in r['pagination']:
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
 
@@ -784,7 +784,7 @@ class TwitchApi(RequestHandler):
         params = {"broadcaster_id": broadcaster_id or self.user_id, "first": first or 20}
         r = await self._request(method, url, params=params)
         out = r['data']
-        if 'cursor' in r['pagination'] and not first:
+        if 'cursor' in r['pagination']:
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
 
@@ -818,7 +818,7 @@ class TwitchApi(RequestHandler):
         params = {"broadcaster_id": broadcaster_id or self.user_id, "first": first or 20}
         r = await self._request(method, url, params=params)
         out = r['data']
-        if 'cursor' in r['pagination'] and not first:
+        if 'cursor' in r['pagination']:
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
 
@@ -871,7 +871,7 @@ class TwitchApi(RequestHandler):
         params = {"query": query, "first": first or 20}
         r = await self._request(method, url, params=params)
         out = r['data']
-        if 'cursor' in r['pagination'] and not first:
+        if 'cursor' in r['pagination']:
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
 
@@ -882,7 +882,7 @@ class TwitchApi(RequestHandler):
         params = {"query": query, "first": first or 20, "live_only": live_only}
         r = await self._request(method, url, params=params)
         out = r['data']
-        if 'cursor' in r['pagination'] and not first:
+        if 'cursor' in r['pagination']:
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
         
@@ -894,7 +894,7 @@ class TwitchApi(RequestHandler):
         params['first'] = first or 100
         r = await self._request("get", self.apiEndpoints['streams'], params=params)
         out = r['data']
-        if 'cursor' in r['pagination'] and not first:
+        if 'cursor' in r['pagination']:
             out += await self._continuePage("get", self.apiEndpoints['streams'], r['pagination'], params=params)
         return out
 
@@ -907,7 +907,7 @@ class TwitchApi(RequestHandler):
             params["first"] = first
         r = await self._request(method, url, params=params)
         out = r['data']
-        if 'cursor' in r['pagination'] and not first:
+        if 'cursor' in r['pagination']:
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
 
@@ -927,7 +927,7 @@ class TwitchApi(RequestHandler):
         params = {"user_id": user_id, "video_id": video_id, "first": first or 20}
         r = await self._request(method, url, params=params)
         out = r['data']
-        if 'cursor' in r['pagination'] and not first:
+        if 'cursor' in r['pagination']:
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
         
@@ -945,7 +945,7 @@ class TwitchApi(RequestHandler):
                 params["user_id"] = [user_id]  # Single ID as list
         r = await self._request(method, url, params=params)
         out = r['data']
-        if 'cursor' in r['pagination'] and not first:
+        if 'cursor' in r['pagination']:
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
 
@@ -967,7 +967,7 @@ class TwitchApi(RequestHandler):
         params = {"first": first or 20}
         r = await self._request(method, url, params=params)
         out = r['data']
-        if 'cursor' in r['pagination'] and not first:
+        if 'cursor' in r['pagination']:
             out += await self._continuePage(method, url, r['pagination'], params=params)
         return out
 
@@ -1014,4 +1014,4 @@ class TwitchApi(RequestHandler):
                 data[param] = kwargs[param]
                 
         r = await self._request("patch", self.apiEndpoints['broadcast'], data=json.dumps(data))
-        return r
+        return r
