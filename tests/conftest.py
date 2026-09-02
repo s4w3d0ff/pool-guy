@@ -149,6 +149,39 @@ def _wait_tcp(port, timeout=30.0):
         time.sleep(0.5)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def network_guard():
+    import aiohttp
+    import websockets
+
+    local_hosts = ("127.0.0.1", "localhost")
+
+    def _check(url, kind):
+        host = urllib.parse.urlsplit(str(url)).hostname or ""
+        if host not in local_hosts:
+            raise RuntimeError(f"guard: non-local {kind} target {host!r} refused; suite is offline-only (127.0.0.1/localhost only)")
+
+    original_request = aiohttp.ClientSession._request
+
+    async def guarded_request(self, method, url, *args, **kwargs):
+        _check(url, "HTTP")
+        return await original_request(self, method, url, *args, **kwargs)
+
+    original_connect = websockets.connect
+
+    def guarded_connect(uri, *args, **kwargs):
+        _check(uri, "websocket")
+        return original_connect(uri, *args, **kwargs)
+
+    aiohttp.ClientSession._request = guarded_request
+    websockets.connect = guarded_connect
+    try:
+        yield
+    finally:
+        aiohttp.ClientSession._request = original_request
+        websockets.connect = original_connect
+
+
 @pytest.fixture(scope="session")
 def mock_servers(tmp_path_factory):
     _kill_own_stale_servers()
