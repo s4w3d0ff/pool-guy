@@ -245,6 +245,7 @@ def mock_units(mock_servers):
     default_partner = max(partners, key=lambda u: int(u.get("view_count", 0)) or 0)
     token = _mock_user_token(client, default_partner["id"], " ".join(DEFAULT_SCOPES))
     totals = {}
+    working_partners = []
     for partner in partners:
         req = urllib.request.Request(
             base + f"/mock/channels/followers?broadcaster_id={partner['id']}&first=1"
@@ -252,8 +253,15 @@ def mock_units(mock_servers):
         req.add_header("Authorization", "Bearer " + token)
         req.add_header("Client-ID", client["ID"])
         with urllib.request.urlopen(req, timeout=10) as resp:
-            totals[partner["id"]] = json.load(resp)["total"]
-    rich_partner = max(partners, key=lambda u: totals[u["id"]])
+            body = json.load(resp)
+        totals[partner["id"]] = body["total"]
+        if body.get("data"):
+            working_partners.append(partner)
+    if not working_partners:
+        raise RuntimeError(
+            "mock-api generated no partner whose followers endpoint serves rows; re-run generate"
+        )
+    rich_partner = max(working_partners, key=lambda u: totals[u["id"]])
     return {
         "client": client,
         "users": users,
@@ -312,6 +320,7 @@ def mocked_api(mock_units, mock_token):
         api.client_id = mock_units["client"]["ID"]
         api.storage = None
         api.token = token
+        api._ratelimit_reset_at = 0
         api.apiEndpoints = {
             key: value.replace(twitchapi_mod.apiUrlPrefix, MOCK_API_PREFIX)
             for key, value in twitchapi_mod.apiEndpoints.items()
