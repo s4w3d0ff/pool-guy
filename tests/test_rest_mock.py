@@ -1,5 +1,7 @@
 """REST response handling against twitch-cli mock-api: real wire format, no fakes."""
 
+import pytest
+
 
 async def test_followers_walks_all_pages_against_mock(mocked_api, mock_units):
     api = mocked_api()
@@ -41,4 +43,30 @@ async def test_followers_terminal_page_without_pagination_key(mocked_api, mock_u
     over_sized = await api.getChannelFollowers(broadcaster_id=partner["id"], first=total * 2)
     assert len(over_sized) == total, (
         f"terminal page without pagination key lost rows: {len(over_sized)} != {total}"
+    )
+
+
+async def test_unknown_route_surfaces_status_and_body(mocked_api):
+    from poolguy.http import ApiRequestError
+
+    api = mocked_api()
+    url = "http://127.0.0.1:8000/mock/not-a-route"
+    with pytest.raises(ApiRequestError) as excinfo:
+        await api._request("get", url)
+    assert excinfo.value.status == 404, f"status not surfaced: {excinfo.value.status}"
+    assert "page not found" in excinfo.value.message.lower(), (
+        f"response body not surfaced in message: {excinfo.value.message!r}"
+    )
+
+
+async def test_deprecated_route_surfaces_json_error_body(mocked_api):
+    from poolguy.http import ApiRequestError
+
+    api = mocked_api()
+    url = "http://127.0.0.1:8000/mock/users/follows?source_id=1&target_id=2"
+    with pytest.raises(ApiRequestError) as excinfo:
+        await api._request("get", url)
+    assert excinfo.value.status == 410, f"status not surfaced: {excinfo.value.status}"
+    assert "deprecated" in excinfo.value.message.lower(), (
+        f"JSON error body message not surfaced: {excinfo.value.message!r}"
     )
