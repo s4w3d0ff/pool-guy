@@ -152,7 +152,7 @@ class TwitchApi(RequestHandler):
             next_params['after'] = page['cursor']
             r = await self._request(method, url, params=next_params)
             out += r['data']
-            page = r['pagination']
+            page = r['pagination'] if 'pagination' in r else {}
         return out
         
     #============================================================================
