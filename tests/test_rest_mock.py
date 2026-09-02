@@ -28,3 +28,17 @@ async def test_followers_walks_all_pages_against_mock(mocked_api, mock_units):
     assert len(requests) == expected_pages, (
         f"expected {expected_pages} requests for {total} followers at first={page_size}, got {len(requests)}"
     )
+
+
+async def test_followers_terminal_page_without_pagination_key(mocked_api, mock_units):
+    api = mocked_api()
+    partner = mock_units["rich_partner"]
+    total = mock_units["follower_totals"][partner["id"]]
+
+    out = await api.getChannelFollowers(broadcaster_id=partner["id"], first=total)
+    assert len(out) == total, f"empty-pagination terminal page lost rows: {len(out)} != {total}"
+
+    over_sized = await api.getChannelFollowers(broadcaster_id=partner["id"], first=total * 2)
+    assert len(over_sized) == total, (
+        f"terminal page without pagination key lost rows: {len(over_sized)} != {total}"
+    )
