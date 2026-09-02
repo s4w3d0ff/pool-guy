@@ -1,7 +1,6 @@
 import json
 import sys
 import time
-import sqlite3
 import asyncio
 import websockets
 import logging
@@ -132,14 +131,9 @@ class TwitchWebsocket:
             if age > REPLAY_WINDOW_SECONDS:
                 logger.warning(f"Dropping replayed message {msg_id} (age {age:.0f}s)")
                 return True
-        try:
-            rows = await self.http.storage.query(
-                "eventsub_messages", where="message_id = ?", params=(msg_id,)
-            )
-        except sqlite3.OperationalError as e:
-            if "no such table" not in str(e):
-                raise
-            return False
+        rows = await self.http.storage.query(
+            "eventsub_messages", where="message_id = ?", params=(msg_id,)
+        )
         if rows:
             logger.debug(f"Duplicate message skipped: {msg_id}")
             return True
