@@ -19,8 +19,9 @@ RECONNECT_CLOSE_WINDOW_SECONDS = 30
 
 
 class TwitchWebsocket:
-    def __init__(self, bot, channels=None, max_reconnect=None, http=None, *args, **kwargs):
+    def __init__(self, bot, channels=None, max_reconnect=None, http=None, ws_url=None, *args, **kwargs):
         self.http = http or TwitchApi(*args, **kwargs)
+        self.ws_url = ws_url or WSURL
         self.channels = channels or {"channel.chat.message": [None]}
         self.max_reconnect = max_reconnect or 20
         self.notification_handler = NotificationHandler(bot, self.http.storage)
@@ -36,7 +37,7 @@ class TwitchWebsocket:
         while self._running:
             try:
                 self._session_id = None
-                self._socket = await websockets.connect(WSURL)
+                self._socket = await websockets.connect(self.ws_url)
                 await self._socket_loop()
             except Exception as e:
                 logger.error(f"Exception in socket loop:\n{e}")
