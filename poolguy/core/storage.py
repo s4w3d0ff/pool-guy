@@ -65,8 +65,13 @@ class SQLiteStorage:
             sql = f"SELECT * FROM {self._clean_str(table)}"
             sql += f" WHERE {where}" if where else ""
             logger.debug(f"query: {sql = }")
-            async with db.execute(sql, params) as cursor:
-                return [dict(row) async for row in cursor]
+            try:
+                async with db.execute(sql, params) as cursor:
+                    return [dict(row) async for row in cursor]
+            except sqlite3.OperationalError as e:
+                if "no such table" not in str(e):
+                    raise
+                return []
 
     async def insert(self, table, data: dict, upsert=True):
         d_keys = list(data.keys())
