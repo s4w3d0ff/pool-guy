@@ -286,3 +286,36 @@ def mock_token(mock_units):
         return _mock_user_token(client, uid, scope_str)
     return issue
 
+
+class MockToken:
+    def __init__(self, access_token):
+        self.access_token = access_token
+
+    async def __call__(self):
+        return {
+            "access_token": self.access_token,
+            "token_type": "bearer",
+            "expires_in": 86400,
+            "scope": " ".join(DEFAULT_SCOPES),
+        }
+
+
+@pytest.fixture(scope="session")
+def mocked_api(mock_units, mock_token):
+    import poolguy.twitchapi as twitchapi_mod
+    from poolguy.twitchapi import TwitchApi
+
+    def build(user_id=None, scopes=None):
+        token = MockToken(mock_token(user_id=user_id, scopes=scopes))
+        api = TwitchApi.__new__(TwitchApi)
+        api.user_id = user_id or mock_units["default_partner"]["id"]
+        api.client_id = mock_units["client"]["ID"]
+        api.storage = None
+        api.token = token
+        api.apiEndpoints = {
+            key: value.replace(twitchapi_mod.apiUrlPrefix, MOCK_API_PREFIX)
+            for key, value in twitchapi_mod.apiEndpoints.items()
+        }
+        return api
+    return build
+
