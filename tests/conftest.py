@@ -42,6 +42,12 @@ class FakeStorage:
     async def delete(self, table, where=None, params=()):
         pass
 
+    async def load_queue(self, name):
+        return []
+
+    async def save_queue(self, name, items):
+        self.queues[name] = list(items)
+
     async def save_token(self, name, token):
         if self.save_token_failures > 0:
             self.save_token_failures -= 1
