@@ -5,8 +5,7 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-if not os.environ.get("DISPLAY") and pathlib.Path("/tmp/.X11-unix/X1").exists():
-    os.environ["DISPLAY"] = ":1"
+
 sys.path.insert(0, str(ROOT))
 
 from poolguy.core.oauth import TokenHandler  # noqa: E402
@@ -26,7 +25,7 @@ async def main():
     handler = TokenHandler(
         client_id=env["TWITCH_CLIENT_ID"],
         client_secret=env.get("TWITCH_CLIENT_SECRET"),
-        redirect_uri="http://localhost:5000/callback",
+        redirect_uri="http://localhost:8080/callback",
         scopes=SCOPES,
         storage=SQLiteStorage(str(ROOT / "db" / "twitch.db")),
         browser=dict(BROWSER),
