@@ -5,6 +5,8 @@ import json
 import subprocess
 import time
 import types
+import uuid
+from datetime import datetime, timedelta, timezone
 
 from conftest import FakeStorage, _http_json, WS_PORT
 
@@ -246,6 +248,111 @@ async def test_event_dispatch_over_socket(mock_ws_url, mock_units, mocked_api):
         )
         assert update_event.get("user_id"), "user.update missing user_id"
         assert isinstance(update_event.get("email_verified"), bool)
+    finally:
+        NotificationHandler.__call__ = orig_call
+        ws._running = False
+        if ws._socket is not None:
+            await ws._socket.close()
+        try:
+            await asyncio.wait_for(task, timeout=10)
+        except (asyncio.TimeoutError, Exception):
+            task.cancel()
+
+
+async def test_dedup_and_replay_drop_over_socket(mock_ws_url, mock_units, mocked_api):
+    from poolguy.eventsub import Alert, AlertFactory, NotificationHandler
+    from poolguy.twitchws import REPLAY_WINDOW_SECONDS, TwitchWebsocket
+
+    partner = mock_units["rich_partner"]
+    api = mocked_api(user_id=partner["id"])
+    api.storage = FakeStorage()
+    api.apiEndpoints["eventsub"] = SUBS_URL
+
+    trigger_args = {"stream.online": ["-t", str(api.user_id)]}
+
+    processed = []
+    wire_messages = {}
+    orig_call = NotificationHandler.__call__
+
+    async def spy(self, metadata, payload):
+        if payload.get("subscription", {}).get("type") in trigger_args:
+            mid = metadata["message_id"]
+            processed.append(mid)
+            wire_messages.setdefault(mid, {"metadata": metadata, "payload": payload})
+        return await orig_call(self, metadata, payload)
+
+    for kind in trigger_args:
+        class Recorder(Alert):
+            queue_skip = True
+
+            async def process(self):
+                pass
+
+        AlertFactory.register_alert_class(kind, Recorder)
+
+    NotificationHandler.__call__ = spy
+    ws = TwitchWebsocket(types.SimpleNamespace(), channels=dict(trigger_args), http=api, ws_url=mock_ws_url)
+    task = asyncio.create_task(ws.run(paused=True))
+    try:
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            body = await asyncio.to_thread(_http_json, SUBS_URL, "GET", {"Client-ID": api.client_id})
+            if all(any(s.get("type") == k and s.get("status") == "enabled" for s in body.get("data", []))
+                   for k in trigger_args):
+                break
+            await asyncio.sleep(0.25)
+
+        sid = ws._session_id
+
+        def trigger(kind):
+            proc = subprocess.run(
+                ["twitch", "event", "trigger", kind, "--transport=websocket",
+                 f"--session={sid}", *trigger_args[kind]],
+                capture_output=True, text=True, timeout=30,
+            )
+            assert proc.returncode == 0, (
+                f"trigger failed rc={proc.returncode}: {(proc.stdout + proc.stderr).strip()[:200]}"
+            )
+
+        async def wait_for(count):
+            end = time.monotonic() + 15
+            while len(processed) < count and time.monotonic() < end:
+                await asyncio.sleep(0.2)
+
+        trigger("stream.online")
+        await wait_for(1)
+        assert len(processed) == 1, f"first delivery never processed: {processed}"
+        first_mid = wire_messages[processed[0]]["metadata"]["message_id"]
+        assert api.storage.messages.get(first_mid), "accepted message not recorded in dedup storage"
+
+        # The mock mints a fresh UUID per trigger; an at-least-once redelivery
+        # is the same wire frame arriving twice, so replay it verbatim.
+        async def feed(message):
+            await ws.handle_message(message)
+
+        first_wire = wire_messages[first_mid]
+        await feed(first_wire)
+        await asyncio.sleep(1)
+        assert processed.count(first_mid) == 1, (
+            f"replayed message_id {first_mid} was not dropped: occurrences={processed.count(first_mid)}"
+        )
+
+        trigger("stream.online")
+        await wait_for(2)
+        assert len(processed) == 2, f"fresh id after duplicate was rejected: {processed}"
+        new_mid = processed[-1]
+
+        stale_meta = dict(wire_messages[new_mid]["metadata"])
+        age_seconds = REPLAY_WINDOW_SECONDS + 300
+        stale_ts = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - age_seconds))
+        fresh_id = str(uuid.uuid4())
+        stale_meta["message_id"] = fresh_id
+        stale_meta["message_timestamp"] = stale_ts
+        await feed({"metadata": stale_meta, "payload": wire_messages[new_mid]["payload"]})
+        await asyncio.sleep(1)
+        assert fresh_id not in processed and api.storage.messages.get(fresh_id) is None, (
+            f"unknown id with {age_seconds}s-old timestamp was accepted; replay window is {REPLAY_WINDOW_SECONDS}s"
+        )
     finally:
         NotificationHandler.__call__ = orig_call
         ws._running = False
