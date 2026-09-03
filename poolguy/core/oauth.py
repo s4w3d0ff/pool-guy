@@ -278,12 +278,12 @@ class TokenHandler:
             self._token = await self._get_new_token()
         result, output = await self._validate_auth()
         if not result:
-            logger.warning(f"Stored twitch token invalid at startup ({output}), re-authenticating...")
+            logger.warning(f"Stored twitch token invalid at startup ({output}), attempting automatic recovery...")
             self.user_id = None
-            self._token = await self._get_new_token()
+            await self._refresh()
             result, output = await self._validate_auth()
             if not result:
-                raise Exception(f"Twitch token validation failed after re-auth: {output}")
+                raise Exception(f"Twitch token validation failed after refresh/re-auth: {output}")
         logger.warning(f"Loaded token!")
         self.user_id = output.get("user_id")
         if not self._running:

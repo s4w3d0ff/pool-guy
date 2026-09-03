@@ -13,7 +13,6 @@ from poolguy.core.storage import SQLiteStorage  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 DB_FILE = os.environ.get("SMOKE_DB_FILE", str(ROOT / "db" / "twitch.db"))
-BROADCASTER_ID = "REDACTED"
 REQUIRED_SCOPES = ("user:read:chat", "user:write:chat")
 SUB_DEADLINE_SECONDS = 10
 KEEPALIVE_WINDOW_SECONDS = 90
@@ -53,13 +52,16 @@ async def run_smoke():
         redirect_uri="http://localhost:8080/callback",
         scopes=list(REQUIRED_SCOPES),
         storage=storage,
-        channels={"channel.chat.message": [BROADCASTER_ID]},
     )
 
     code = 1
     try:
         await asyncio.wait_for(bot.start(hold=False), timeout=120)
-        print(f"login complete, user_id={bot.http.user_id}")
+        broadcaster_id = bot.http.user_id
+        if not broadcaster_id:
+            print("FAIL: token validated but no user_id resolved")
+            return 1
+        print(f"login complete, broadcaster_id={broadcaster_id}")
 
         ws = bot.ws
         welcome_deadline = time.monotonic() + 60
@@ -91,7 +93,7 @@ async def run_smoke():
         socket_closed = ws._socket is None or not ws._running
         print(f"keepalive window: {KEEPALIVE_WINDOW_SECONDS}s, socket still connected={not socket_closed}")
 
-        r = await bot.http.sendChatMessage(CHAT_MESSAGE, BROADCASTER_ID)
+        r = await bot.http.sendChatMessage(CHAT_MESSAGE, broadcaster_id)
         sent_ok = bool(r[0]["is_sent"])
         print(f"chat roundtrip: is_sent={sent_ok}" + ("" if sent_ok else f" drop_reason={r[0].get('drop_reason')}"))
 
