@@ -33,7 +33,10 @@ class TokenHandler:
             scopes=None, 
             storage=None, 
             webserver=None, 
-            browser=None
+            browser=None,
+            token_endpoint=None,
+            oauth_endpoint=None,
+            validate_endpoint=None
         ):
         if not client_id:
             raise ValueError(f"Client id required!")
@@ -42,6 +45,9 @@ class TokenHandler:
         self.redirect_uri = redirect_uri
         self.scopes = scopes or []
         self.client_type = "public" if not client_secret else "confidential"
+        self.token_endpoint = token_endpoint or tokenEndpoint
+        self.oauth_endpoint = oauth_endpoint or oauthEndpoint
+        self.validate_endpoint = validate_endpoint or validateEndoint
         self.storage = storage or StorageFactory.create_storage('sqlite')
         if redirect_uri:
             parsed_uri = urlparse(redirect_uri)
@@ -89,7 +95,7 @@ class TokenHandler:
             'scope': ' '.join(self.scopes),
             'state': self._state
         })
-        auth_link = f"{oauthEndpoint}?{params}"
+        auth_link = f"{self.oauth_endpoint}?{params}"
         try:
             bro = webbrowser.get(self.browser)
             bro.open(auth_link, new=1)
@@ -117,7 +123,7 @@ class TokenHandler:
 
     async def _token_request(self, headers, data):
         async with aiohttp.ClientSession() as session:
-            async with session.post(tokenEndpoint, headers=headers, data=data) as resp:
+            async with session.post(self.token_endpoint, headers=headers, data=data) as resp:
                 if resp.status != 200:
                     raise Exception(f"Token request failed: {await resp.text()}")
                 token = self._merge_token(await resp.json())
@@ -196,7 +202,7 @@ class TokenHandler:
                 }
             heads = {'Accept': 'application/json'}
             async with aiohttp.ClientSession() as session:
-                async with session.post(tokenEndpoint, headers=heads, data=data) as resp:
+                async with session.post(self.token_endpoint, headers=heads, data=data) as resp:
                     if resp.status != 200:
                         raise Exception(f"App token request failed: {await resp.text()}")
                     app = await resp.json()
@@ -209,7 +215,7 @@ class TokenHandler:
         logger.info(f'Validating twitch token...')
         heads = {'Authorization': f'OAuth {self._token["access_token"]}'}
         async with aiohttp.ClientSession() as session:
-            async with session.get(validateEndoint, headers=heads) as response:
+            async with session.get(self.validate_endpoint, headers=heads) as response:
                 auth_check = await response.json()
                 match response.status:
                     case 200:

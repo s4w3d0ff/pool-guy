@@ -9,7 +9,6 @@ from typing import List, Tuple, Dict, Any
 
 logger = logging.getLogger(__name__)
 
-WSURL = "wss://eventsub.wss.twitch.tv/ws?keepalive_timeout_seconds=600"
 
 def convert2epoch(timestampstr):
     return parser.parse(timestampstr).timestamp()

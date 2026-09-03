@@ -1,4 +1,5 @@
 """EventSub webhook verification: signature, challenge echo, dispatch."""
+import asyncio
 import hashlib
 import hmac
 import json
@@ -123,3 +124,57 @@ async def test_compute_signature_matches_independent_impl():
     body = b'{"challenge":"zz"}'
     expected = sig("id1", "ts1", body)
     assert compute_signature(SECRET, "id1", "ts1", body) == expected
+
+
+async def test_cli_signed_traffic_against_live_handler(mock_units):
+    import socket
+
+    from poolguy.webhook import make_webhook_handler
+
+    def free_port():
+        for port in (8094, 8095, 8096, 8097):
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=0.3):
+                    continue
+            except OSError:
+                return port
+        raise RuntimeError("no free local port for webhook signed-traffic test")
+
+    port = free_port()
+    broadcaster = mock_units["rich_partner"]["id"]
+    callback_url = f"http://127.0.0.1:{port}/eventsub/"
+    events = []
+    received = asyncio.Event()
+
+    async def on_event(payload):
+        events.append(payload)
+        received.set()
+
+    app = web.Application()
+    handler = make_webhook_handler(SECRET, on_event=on_event)
+    app.router.add_post("/eventsub", handler)
+    app.router.add_post("/eventsub/", handler)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "127.0.0.1", port)
+    await site.start()
+    try:
+        p = await asyncio.create_subprocess_exec(
+            "twitch", "event", "verify-subscription", "channel.follow",
+            "-b", str(broadcaster), "-F", callback_url, "-s", SECRET,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        out, err = await asyncio.wait_for(p.communicate(), timeout=30)
+        combined = (out + err).decode().lower()
+        assert p.returncode == 0, f"verify-subscription failed: {(out + err).decode()}"
+        assert "valid response" in combined and "200" in combined, (out + err).decode()
+
+        t = await asyncio.create_subprocess_exec(
+            "twitch", "event", "trigger", "channel.follow", "-T", "webhook",
+            "-F", callback_url, "-s", SECRET,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        out, err = await asyncio.wait_for(t.communicate(), timeout=30)
+        assert t.returncode == 0, f"trigger failed: {(out + err).decode()}"
+        await asyncio.wait_for(received.wait(), timeout=15)
+        assert events[0]["subscription"]["type"] == "channel.follow", json.dumps(events[0])
+    finally:
+        await runner.cleanup()
