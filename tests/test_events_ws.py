@@ -550,3 +550,59 @@ async def test_reconnect_over_real_socket(mock_ws_url, mock_units, mocked_api):
             await asyncio.wait_for(task, timeout=10)
         except (asyncio.TimeoutError, Exception):
             task.cancel()
+
+
+async def test_subscribe_deadline_require_subscription(tmp_path, mock_units, mocked_api, caplog):
+    import logging
+
+    from conftest import _port_in_use, _wait_tcp
+    from poolguy.twitchws import TwitchWebsocket
+
+    free_port = next(p for p in (8091, 8092, 8093) if not _port_in_use(p))
+    log_file = tmp_path / "deadline-server.log"
+    with open(log_file, "wb") as fh:
+        server = subprocess.Popen(
+            ["twitch", "event", "websocket", "start-server", "-p", str(free_port), "-S"],
+            stdout=fh, stderr=subprocess.STDOUT,
+        )
+    try:
+        await asyncio.to_thread(_wait_tcp, free_port)
+
+        api = mocked_api()
+        api.storage = FakeStorage()
+        ws = TwitchWebsocket(types.SimpleNamespace(), http=api, ws_url=f"ws://127.0.0.1:{free_port}/ws")
+        ws.channels = {}
+        task = asyncio.create_task(ws.run(paused=True))
+        try:
+            with caplog.at_level(logging.ERROR, logger="poolguy.twitchws"):
+                seen_sessions = []
+                end = time.monotonic() + 40
+                while len(seen_sessions) < 2 and time.monotonic() < end:
+                    if ws._session_id and ws._session_id not in seen_sessions:
+                        seen_sessions.append(ws._session_id)
+                    await asyncio.sleep(0.2)
+            assert len(seen_sessions) >= 2, (
+                f"client never cycled past the deadline close; sessions={seen_sessions}; "
+                f"server log:\n{log_file.read_text()[-800:]}"
+            )
+            closes = [r for r in caplog.records if "connection error" in r.message.lower()]
+            assert any("unused" in r.message.lower() for r in closes), (
+                f"no deadline close reason logged: {[c.message[:200] for c in closes]}"
+            )
+            assert not any(
+                "Exception in socket loop" in r.message for r in caplog.records
+            ), "run loop crashed instead of handling the deadline close"
+        finally:
+            ws._running = False
+            if ws._socket is not None:
+                await ws._socket.close()
+            try:
+                await asyncio.wait_for(task, timeout=10)
+            except (asyncio.TimeoutError, Exception):
+                task.cancel()
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            server.kill()
