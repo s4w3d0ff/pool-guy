@@ -5,7 +5,6 @@ import logging
 import uuid
 from abc import ABC, abstractmethod
 from dateutil import parser
-from collections import OrderedDict
 from typing import List, Tuple, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -142,7 +141,8 @@ class AlertPriorityQueue(asyncio.PriorityQueue):
             return False
         try:
             saved_items = await self.storage.load_queue("alerts")
-        except:
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
+            logger.exception(f"Corrupt alert queue state in storage: {e}")
             saved_items = []
 
         if not saved_items:
@@ -237,23 +237,6 @@ class AlertPriorityQueue(asyncio.PriorityQueue):
 
 
 #=============================================================================================
-class MaxSizeDict(OrderedDict):
-    """ OrderedDict subclass with a 'max_size' which restricts the len. 
-    As items are added, the oldest items are removed to make room. """
-    def __init__(self, max_size):
-        super().__init__()
-        self.max_size = max_size
-    
-    def __setitem__(self, key, value):
-        if key in self:
-            self.move_to_end(key)
-        else:
-            if len(self) >= self.max_size:
-                self.popitem(last=False)
-        super().__setitem__(key, value)
-
-
-#=============================================================================================
 class NotificationHandler:
     def __init__(self, bot, storage):
         self.bot = bot
@@ -281,7 +264,7 @@ class NotificationHandler:
                 pass
             except asyncio.CancelledError:
                 self._running = False
-            except:
+            except Exception:
                 logger.exception("NotificationHandler._loop:\n")
         logger.warning(f"NotificationHandler._loop stopped!")
 
