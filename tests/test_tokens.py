@@ -1,5 +1,6 @@
 """Token lifecycle: rotation rules, bounded waits, startup validation."""
 import asyncio
+import json
 import time
 
 from conftest import make_handler
@@ -168,3 +169,19 @@ async def test_get_token_wait_bounded_under_slow_storage():
     assert token["access_token"] == "ok-at"
     assert elapsed < 3, f"get_token blocked too long: {elapsed:.2f}s"
     await handler.stop()
+
+
+async def test_app_token_grant_against_mock_auth_endpoint(mock_units):
+    handler = make_handler(
+        client_secret=mock_units["client"]["Secret"],
+    )
+    handler.client_id = mock_units["client"]["ID"]
+    handler.token_endpoint = f"http://127.0.0.1:8000/auth/token"
+
+    token = await handler.get_app_token()
+
+    assert token.get("access_token"), json.dumps(token)
+    assert token["token_type"] == "app"
+    stored = await handler.storage.load_token("twitch_app")
+    assert stored and stored.get("access_token") == token["access_token"]
+
