@@ -6,9 +6,8 @@ import subprocess
 import time
 import types
 import uuid
-from datetime import datetime, timedelta, timezone
 
-from conftest import FakeStorage, _http_json, WS_PORT
+from conftest import FakeStorage, _http_json, iso_offset, WS_PORT
 
 SUBS_URL = f"http://127.0.0.1:{WS_PORT}/eventsub/subscriptions"
 
@@ -353,6 +352,195 @@ async def test_dedup_and_replay_drop_over_socket(mock_ws_url, mock_units, mocked
         assert fresh_id not in processed and api.storage.messages.get(fresh_id) is None, (
             f"unknown id with {age_seconds}s-old timestamp was accepted; replay window is {REPLAY_WINDOW_SECONDS}s"
         )
+    finally:
+        NotificationHandler.__call__ = orig_call
+        ws._running = False
+        if ws._socket is not None:
+            await ws._socket.close()
+        try:
+            await asyncio.wait_for(task, timeout=10)
+        except (asyncio.TimeoutError, Exception):
+            task.cancel()
+
+
+
+async def test_revocation_resubscribes_injected_frame(mock_ws_url, mock_units, mocked_api, caplog):
+    import logging
+
+    from poolguy.twitchws import TwitchWebsocket
+
+    partner = mock_units["rich_partner"]
+    api = mocked_api(user_id=partner["id"])
+    api.storage = FakeStorage()
+    api.apiEndpoints["eventsub"] = SUBS_URL
+
+    channels = {"channel.ban": [partner["id"]]}
+    headers = {"Client-ID": api.client_id}
+
+    body = _http_json(SUBS_URL, "GET", headers)
+    for sub in body.get("data", []):
+        await asyncio.to_thread(_http_json, f"{SUBS_URL}?id={sub['id']}", "DELETE", headers)
+
+    ws = TwitchWebsocket(types.SimpleNamespace(), channels=channels, http=api, ws_url=mock_ws_url)
+    task = asyncio.create_task(ws.run(paused=True))
+    try:
+        subs = await _poll_subscriptions(["channel.ban"], api.client_id)
+        ban_sub = next(
+            s for s in subs if s.get("type") == "channel.ban" and s.get("status") == "enabled"
+        )
+
+        rc = subprocess.run(
+            ["twitch", "event", "websocket", "subscription",
+             "--status=user_removed", f"--subscription={ban_sub['id']}"],
+            capture_output=True, text=True, timeout=30,
+        )
+        assert rc.returncode == 0, (
+            f"revocation status change failed rc={rc.returncode}: {(rc.stdout + rc.stderr).strip()[:200]}"
+        )
+
+        revoked = dict(ban_sub)
+        revoked["status"] = "user_removed"
+        frame = {
+            "metadata": {
+                "message_type": "revocation",
+                "message_id": str(uuid.uuid4()),
+                "message_timestamp": iso_offset(0),
+            },
+            "payload": {"subscription": revoked},
+        }
+
+        with caplog.at_level(logging.WARNING, logger="poolguy.twitchws"):
+            await ws.handle_message(frame)
+
+        end = time.monotonic() + 15
+        fresh = None
+        while time.monotonic() < end:
+            subs_now = _http_json(SUBS_URL, "GET", headers).get("data", [])
+            candidates = [
+                s for s in subs_now
+                if s.get("type") == "channel.ban" and s["id"] != ban_sub["id"]
+                and s.get("status") == "enabled"
+            ]
+            if candidates:
+                fresh = candidates[0]
+                break
+            await asyncio.sleep(0.25)
+        assert fresh is not None, (
+            f"no re-subscription after revocation of {ban_sub['id']}: "
+            f"{json.dumps(_http_json(SUBS_URL, 'GET', headers), indent=2)}"
+        )
+        assert fresh["condition"].get("broadcaster_user_id") == partner["id"]
+        assert any(ban_sub["id"] in r.message and "revoked" in r.message.lower() for r in caplog.records), (
+            f"no revocation log recorded: {[r.message for r in caplog.records]}"
+        )
+    finally:
+        ws._running = False
+        if ws._socket is not None:
+            await ws._socket.close()
+        try:
+            await asyncio.wait_for(task, timeout=10)
+        except (asyncio.TimeoutError, Exception):
+            task.cancel()
+
+
+async def test_reconnect_over_real_socket(mock_ws_url, mock_units, mocked_api):
+    from poolguy.eventsub import Alert, AlertFactory, NotificationHandler
+    from poolguy.twitchws import TwitchWebsocket
+
+    partner = mock_units["rich_partner"]
+    api = mocked_api(user_id=partner["id"])
+    api.storage = FakeStorage()
+    api.apiEndpoints["eventsub"] = SUBS_URL
+
+    channels = {
+        "stream.online": None,
+        "channel.ban": [partner["id"]],
+    }
+    processed = []
+    orig_call = NotificationHandler.__call__
+    headers = {"Client-ID": api.client_id}
+
+    async def spy(self, metadata, payload):
+        if payload.get("subscription", {}).get("type") in channels:
+            processed.append(payload["subscription"]["type"])
+        return await orig_call(self, metadata, payload)
+
+    class Recorder(Alert):
+        queue_skip = True
+
+        async def process(self):
+            pass
+
+    for kind in channels:
+        AlertFactory.register_alert_class(kind, Recorder)
+
+    body = _http_json(SUBS_URL, "GET", headers)
+    for sub in body.get("data", []):
+        await asyncio.to_thread(_http_json, f"{SUBS_URL}?id={sub['id']}", "DELETE", headers)
+
+    NotificationHandler.__call__ = spy
+    ws = TwitchWebsocket(types.SimpleNamespace(), channels=channels, http=api, ws_url=mock_ws_url)
+    task = asyncio.create_task(ws.run(paused=True))
+    try:
+        subs = await _poll_subscriptions(list(channels), api.client_id)
+        original_ids = {
+            s["id"] for s in subs if s.get("type") in channels and s.get("status") == "enabled"
+        }
+        old_sid = ws._session_id
+        assert old_sid
+
+        t0 = time.monotonic()
+        proc = subprocess.run(
+            ["twitch", "event", "websocket", "reconnect"],
+            capture_output=True, text=True, timeout=30,
+        )
+        assert proc.returncode == 0, (
+            f"reconnect command failed rc={proc.returncode}: {(proc.stdout + proc.stderr).strip()[:200]}"
+        )
+
+        new_sid = None
+        end = time.monotonic() + 30
+        while time.monotonic() < end:
+            if ws._session_id and ws._session_id != old_sid:
+                new_sid = ws._session_id
+                break
+            await asyncio.sleep(0.2)
+        assert new_sid, (
+            f"client never followed session_reconnect; still on {old_sid} "
+            f"{time.monotonic() - t0:.1f}s after reconnect command"
+        )
+
+        rebound = None
+        end = time.monotonic() + 30
+        while time.monotonic() < end:
+            active = [
+                s for s in _http_json(SUBS_URL, "GET", headers).get("data", [])
+                if s.get("type") in channels and s.get("status") == "enabled"
+            ]
+            if len(active) == len(channels) \
+               and all(s["transport"].get("session_id") == new_sid for s in active) \
+               and {s["id"] for s in active} == original_ids:
+                rebound = active
+                break
+            await asyncio.sleep(0.25)
+        assert rebound is not None, (
+            f"subscriptions not re-bound to session {new_sid}: "
+            f"{json.dumps(_http_json(SUBS_URL, 'GET', headers), indent=2)}"
+        )
+
+        trigger = subprocess.run(
+            ["twitch", "event", "trigger", "stream.online", "--transport=websocket",
+             f"--session={new_sid}", "-t", str(api.user_id)],
+            capture_output=True, text=True, timeout=30,
+        )
+        assert trigger.returncode == 0, (
+            f"post-reconnect trigger failed rc={trigger.returncode}: "
+            f"{(trigger.stdout + trigger.stderr).strip()[:200]}"
+        )
+        end = time.monotonic() + 15
+        while "stream.online" not in processed and time.monotonic() < end:
+            await asyncio.sleep(0.2)
+        assert "stream.online" in processed, f"no event dispatched after reconnect; processed={processed}"
     finally:
         NotificationHandler.__call__ = orig_call
         ws._running = False
