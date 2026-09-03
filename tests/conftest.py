@@ -109,7 +109,10 @@ def _http_json(url, method="GET", headers=None):
     for key, value in (headers or {}).items():
         req.add_header(key, value)
     with urllib.request.urlopen(req, timeout=10) as resp:
-        return json.load(resp)
+        body = resp.read()
+    if not body:
+        return {}
+    return json.loads(body)
 
 
 def _port_in_use(port):
