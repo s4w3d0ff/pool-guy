@@ -115,6 +115,8 @@ class TwitchWebsocket:
             return
         condition = sub.get('condition', {})
         try:
+            if sub.get('id'):
+                await self.http.deleteEventSub(sub['id'])
             await self.create_event_sub(
                 event_type, bid=condition.get('broadcaster_user_id')
             )
