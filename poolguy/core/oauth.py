@@ -243,7 +243,15 @@ class TokenHandler:
         self._refresh_event.set()
         logger.debug(f"token _refresher started...")
         while self._running:
-            result, output = await self._validate_auth()
+            try:
+                result, output = await self._validate_auth()
+            except Exception as e:
+                logger.error(f"Token validation failed transiently: {e}. Retrying in {VALIDATE_INTERVAL_SECONDS}s")
+                try:
+                    await asyncio.sleep(VALIDATE_INTERVAL_SECONDS)
+                except asyncio.CancelledError:
+                    self._running = False
+                continue
             if not result:
                 logger.info(f'Validation failed: {output}')
                 await self._refresh()

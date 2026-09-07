@@ -147,5 +147,4 @@ class StorageFactory:
             case 'sqlite':
                 return SQLiteStorage(**kwargs)
             case _:
-                logger.error(f"Unknown storage type: {storage_type}!")
-                return storage_type(**kwargs)
+                raise ValueError(f"Unknown storage type: {storage_type!r}")

@@ -121,8 +121,16 @@ class WebServer:
 
     async def stop(self):
         """Stop the web server."""
+        if not self._app_task:
+            return
+        # A site started moments ago may not be registered with its runner yet;
+        # yield once so the start task can make progress before teardown.
+        await asyncio.sleep(0)
         if self._site:
-            await self._site.stop()
+            try:
+                await self._site.stop()
+            except RuntimeError as e:
+                logger.debug(f"Site not fully registered at stop time, continuing shutdown: {e}")
         if self._runner:
             await self._runner.cleanup()
         self._app_task.cancel()

@@ -98,9 +98,10 @@ class TwitchBot:
         out = ""
         for word in message.split(" "):
             if len(out) + len(word) > 400:
-                r = await self.http.sendChatMessage(out.strip(), channel_id)
-                if not r[0]['is_sent']:
-                    logger.error(f"Message not sent! {r[0]['drop_reason']}")
+                if out.strip():
+                    r = await self.http.sendChatMessage(out.strip(), channel_id)
+                    if not r[0]['is_sent']:
+                        logger.error(f"Message not sent! {r[0]['drop_reason']}")
                 out = word + " "
             else:
                 out += word + " "
@@ -221,7 +222,7 @@ def rate_limit(calls=2, period=10, warn_cooldown=5):
 class CommandBot(TwitchBot):
     def __init__(self, cmd_prefix=['!', '~'], *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if "channel.chat.message" not in self._twitch_config["channels"]:
+        if "channel.chat.message" not in self._twitch_config.get("channels", {}):
             raise ValueError("Not configured to subscribe to channel.chat.message!")
         self._prefix = cmd_prefix
         self._commands = {}

@@ -10,7 +10,7 @@ A lightweight Twitch bot framework.
 - EventSub websocket handling
 - Priority queue for EventSub notifications
 - Bot command and ratelimit decorators
-- Framework to support multiple storage backends
+- Pluggable storage factory (sqlite backend)
 
 ## Limitations:
 - Conduit/shards are not implimented

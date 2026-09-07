@@ -1,6 +1,7 @@
 import json
 import copy
 import asyncio
+import inspect
 import logging
 import uuid
 from abc import ABC, abstractmethod
@@ -82,24 +83,34 @@ class GenericAlert(Alert):
         logger.debug(f"Data: {self.data}")
     
     async def store(self):
-        out = {}
-        for key, value in copy.deepcopy(self.data).items():
-            if isinstance(value, list):
-                out[key] = json.dumps(value)
-            elif isinstance(value, dict):
-                for k, v in copy.deepcopy(self.data[key]).items():
-                    if isinstance(v, list) or isinstance(v, dict):
-                        out[f'{key}_{k}'] = json.dumps(v)
-                    else:
-                        out[f'{key}_{k}'] = v
-            else:
-                out[key] = value
-        out["timestamp"] = self.timestamp
-        out["message_id"] = self.message_id
-        await self.bot.storage.insert(
-            self.bot.storage.channel_to_table(self.channel),
-            out
+        await persist_alert_row(
+            self.bot.storage,
+            self.channel,
+            self.message_id,
+            self.data,
+            self.timestamp
         )
+
+async def persist_alert_row(storage, channel, message_id, data, timestamp):
+    out = {}
+    for key, value in copy.deepcopy(data).items():
+        if isinstance(value, list):
+            out[key] = json.dumps(value)
+        elif isinstance(value, dict):
+            for k, v in copy.deepcopy(data[key]).items():
+                if isinstance(v, list) or isinstance(v, dict):
+                    out[f'{key}_{k}'] = json.dumps(v)
+                else:
+                    out[f'{key}_{k}'] = v
+        else:
+            out[key] = value
+    out["timestamp"] = timestamp
+    out["message_id"] = message_id
+    await storage.insert(
+        channel,
+        out
+    )
+
 
 #=============================================================================================
 
@@ -307,10 +318,19 @@ class NotificationHandler:
         }
         alert = AlertFactory.create_alert(bot=self.bot, **event.copy())
         if self.storage and alert.store and "test_" not in event["message_id"]:
-            if asyncio.iscoroutinefunction(alert.store):
-                await alert.store()
+            store_fn = alert.store
+            if callable(store_fn):
+                result = store_fn()
+                if inspect.isawaitable(result):
+                    await result
             else:
-                alert.store()
+                await persist_alert_row(
+                    self.storage,
+                    alert.channel,
+                    alert.message_id,
+                    alert.data,
+                    alert.timestamp
+                )
         if not alert.queue_skip:
             await self._queue.put(alert)
         else:

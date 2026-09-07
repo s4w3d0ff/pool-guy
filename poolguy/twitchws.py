@@ -34,14 +34,24 @@ class TwitchWebsocket:
         await self.notification_handler.start(paused=paused)
         if not self.http.user_id:
             await self.http.login(token)
+        failed_connects = 0
         while self._running:
             try:
                 self._session_id = None
                 self._socket = await websockets.connect(self.ws_url)
+                failed_connects = 0
                 await self._socket_loop()
             except Exception as e:
                 logger.error(f"Exception in socket loop:\n{e}")
                 if not self._running:
+                    break
+                failed_connects += 1
+                if failed_connects >= self.max_reconnect:
+                    logger.error(
+                        f"Giving up after {failed_connects} failed connects "
+                        f"(max_reconnect={self.max_reconnect})"
+                    )
+                    self._running = False
                     break
                 await asyncio.sleep(5)
 

@@ -21,11 +21,11 @@ setup(
     ],
     python_requires=">=3.10",
     install_requires=[
-        "aiohttp",         # async HTTP server
-        "websockets",      # WebSocket client
-        "python-dateutil", # date parsing
-        "aiofiles",        # async file editing
-        "aiosqlite"        # local database
+        "aiohttp>=3.14.3",         # async HTTP server
+        "websockets>=17.1",        # WebSocket client
+        "python-dateutil>=2.9.0.post0",  # date parsing
+        "aiofiles>=25.1.0",        # async file editing
+        "aiosqlite>=0.22.1"        # local database
     ],
     zip_safe=False,
     license="GNU General Public License v3 (GPLv3)",
