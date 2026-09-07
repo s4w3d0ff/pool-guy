@@ -421,3 +421,93 @@ def test_storage_instance_bypasses_factory():
         storage=custom,
     )
     assert handler.storage is custom
+
+
+#=============================================================================================
+# L-02: max_reconnect must cap consecutive failed connects in run()
+#=============================================================================================
+
+class _ModProxy:
+    def __init__(self, real, overrides):
+        self._real = real
+        self._overrides = overrides
+
+    def __getattr__(self, name):
+        if name in self._overrides:
+            return self._overrides[name]
+        return getattr(self._real, name)
+
+
+def _make_ws(max_reconnect=3):
+    from conftest import FakeStorage
+    from poolguy.twitchws import TwitchWebsocket
+    http_stub = type("H", (), {"storage": FakeStorage(), "user_id": "9"})()
+    ws = TwitchWebsocket(None, channels={}, http=http_stub, max_reconnect=max_reconnect)
+
+    async def _no_start(paused=False):
+        pass
+
+    ws.notification_handler.start = _no_start
+    return ws
+
+
+async def test_run_gives_up_after_max_reconnect_failed_connects(monkeypatch, caplog):
+    import asyncio as _asyncio
+    import logging
+    import poolguy.twitchws as twitchws_mod
+    from conftest import FakeStorage
+
+    ws = _make_ws(max_reconnect=3)
+    attempts = []
+    sleeps = []
+
+    async def boom(url):
+        attempts.append(1)
+        raise ConnectionRefusedError("stub connect failure")
+
+    async def no_sleep(seconds):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(twitchws_mod, "websockets", _ModProxy(twitchws_mod.websockets, {"connect": boom}))
+    monkeypatch.setattr(twitchws_mod, "asyncio", _ModProxy(_asyncio, {"sleep": no_sleep}))
+
+    with caplog.at_level(logging.ERROR, logger="poolguy.twitchws"):
+        await ws.run()
+
+    assert len(attempts) == 3, f"expected exactly 3 connect attempts, got {len(attempts)}"
+    assert "Giving up" in caplog.text, "no give-up error log was emitted"
+    assert not ws._running
+
+
+async def test_run_recovers_when_failures_stay_under_cap(monkeypatch, caplog):
+    import asyncio as _asyncio
+    import logging
+    import poolguy.twitchws as twitchws_mod
+
+    ws = _make_ws(max_reconnect=3)
+    attempts = []
+    sleeps = []
+    loop_calls = {"n": 0}
+
+    async def flaky(url):
+        attempts.append(1)
+        if len(attempts) < 3:
+            raise ConnectionRefusedError("stub connect failure")
+
+    async def no_sleep(seconds):
+        sleeps.append(seconds)
+
+    async def _loop_once():
+        loop_calls["n"] += 1
+        ws._running = False
+
+    monkeypatch.setattr(twitchws_mod, "websockets", _ModProxy(twitchws_mod.websockets, {"connect": flaky}))
+    monkeypatch.setattr(twitchws_mod, "asyncio", _ModProxy(_asyncio, {"sleep": no_sleep}))
+    ws._socket_loop = _loop_once
+
+    with caplog.at_level(logging.ERROR, logger="poolguy.twitchws"):
+        await ws.run()
+
+    assert len(attempts) == 3, f"expected 2 failures then a recovered connect, got {len(attempts)}"
+    assert loop_calls["n"] == 1, "socket loop was not reached after the successful reconnect"
+    assert "Giving up" not in caplog.text, "run() gave up although failures stayed under the cap"
