@@ -37,6 +37,8 @@ class RequestHandler:
         # Storage
         if isinstance(storage, str):
             self.storage = StorageFactory.create_storage(storage)
+        elif storage is None:
+            self.storage = StorageFactory.create_storage('sqlite')
         else:
             self.storage = storage
         # Webserver
