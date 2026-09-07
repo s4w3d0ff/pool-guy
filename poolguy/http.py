@@ -134,11 +134,9 @@ class RequestHandler:
                         pass
                     raise ApiRequestError(response.status, message, url=url) from e
                 match method.lower():
-                    case "get" | "post":
+                    case _:
                         try:
                             return await response.json()
                         except (aiohttp.ContentTypeError, json.JSONDecodeError) as e:
                             logger.warning(f"JSON decode failed for {url}: {e}. Returning raw response!")
                             return response
-                    case _:
-                        return response

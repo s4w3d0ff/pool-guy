@@ -137,31 +137,21 @@ async def test_generic_alert_store_inserts_and_queries_back(tmp_path):
 # H-02: non get/post methods must return a decoded dict supporting r['data']
 #=============================================================================================
 
-H02_METHODS = {
-    "updateChatSettings": lambda a: a.updateChatSettings(settings={"slow_mode_enabled": True}),
-    "unbanUser": lambda a: a.unbanUser(user_id="77"),
-    "updateAutomodSettings": lambda a: a.updateAutomodSettings({"block_level": 1}),
-    "endGuestStarSession": lambda a: a.endGuestStarSession(),
-    "removeModerator": lambda a: a.removeModerator(user_id="77"),
-    "removeVIP": lambda a: a.removeVIP(user_id="77"),
-    "endPoll": lambda a: a.endPoll(poll_id="p1"),
-    "endPrediction": lambda a: a.endPrediction(id="pr1"),
-    "cancelRaid": lambda a: a.cancelRaid(),
-}
+H02_VERBS = ("patch", "put", "delete")
 
 
 async def test_non_getpost_methods_return_subscriptable_data():
-    for name, call in H02_METHODS.items():
+    for verb in H02_VERBS:
         session, restore = patch_transport(
-            [{"data": [{"id": name}], "total_cost": 0}]
+            [dict(payload={"data": [{"verb": verb}], "total_cost": 0})]
         )
         try:
             api = make_api_stub()
-            r = await call(api)
+            r = await api._request(verb, f"http://127.0.0.1/{verb}")
         finally:
             restore()
-        assert isinstance(r, dict), f"{name}: expected decoded dict, got {type(r)}"
-        assert r["data"] == [{"id": name}]
+        assert isinstance(r, dict), f"{verb}: expected decoded dict, got {type(r)}"
+        assert r["data"] == [{"verb": verb}]
 
 
 #=============================================================================================
