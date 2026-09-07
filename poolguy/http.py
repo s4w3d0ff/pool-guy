@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 BOT_NAME = "pool-guy"
 BOT_VERSION = "0.1.9"
+DEFAULT_RATELIMIT_WAIT_SECONDS = 10
 
 
 class ApiRequestError(Exception):
@@ -114,9 +115,13 @@ class RequestHandler:
                         kwargs['headers'] = await self._headers()
                         return await self._request(method, url, *args, **kwargs)
                     case 429:
-                        ratelimit_reset = int(response.headers.get('Ratelimit-Reset'))
-                        wait_time = ratelimit_reset - int(time.time()) + 3
-                        logger.warning(f"Rate limited! [{response.headers["X-Cache"]}] {wait_time = }")
+                        reset_hdr = response.headers.get('Ratelimit-Reset')
+                        if reset_hdr is None or not str(reset_hdr).isdigit():
+                            wait_time = DEFAULT_RATELIMIT_WAIT_SECONDS
+                        else:
+                            wait_time = int(reset_hdr) - int(time.time()) + 3
+                        cache_val = response.headers.get('X-Cache', 'unknown')
+                        logger.warning(f"Rate limited! [{cache_val}] {wait_time = }")
                         await asyncio.sleep(wait_time)
                         return await self._request(method, url, *args, **kwargs)
                 try:
