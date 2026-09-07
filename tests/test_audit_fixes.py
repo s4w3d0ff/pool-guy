@@ -159,7 +159,7 @@ async def test_non_getpost_methods_return_subscriptable_data():
 #=============================================================================================
 
 async def test_flag_alert_persists_through_notification_handler(tmp_path):
-    from poolguy.eventsub import Alert, NotificationHandler
+    from poolguy.eventsub import Alert, AlertFactory, NotificationHandler
     from poolguy.core.storage import StorageFactory
 
     class FlagAlert(Alert):
@@ -172,27 +172,32 @@ async def test_flag_alert_persists_through_notification_handler(tmp_path):
     storage = StorageFactory.create_storage('sqlite', db_path=str(tmp_path / 'audit.db'))
     bot = type("B", (), {"storage": storage})()
     handler = NotificationHandler(bot, storage)
-    metadata = {
-        "message_id": "flag-audit-1",
-        "message_timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.%f000Z"),
-    }
-    payload = {
-        "subscription": {"type": "channel.ban"},
-        "event": {"broadcaster_user_id": "7"},
-    }
-    await handler(metadata, payload)
-    rows = await storage.query("channel_ban", where="message_id = ?", params=("flag-audit-1",))
+    AlertFactory.register_alert_class("audit_flag", FlagAlert)
+    try:
+        metadata = {
+            "message_id": "flag-audit-1",
+            "message_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        payload = {
+            "subscription": {"type": "audit_flag"},
+            "event": {"broadcaster_user_id": "7"},
+        }
+        await handler(metadata, payload)
+    finally:
+        AlertFactory._alert_classes.pop("audit_flag", None)
+    rows = await storage.query("audit_flag", where="message_id = ?", params=("flag-audit-1",))
     assert len(rows) == 1
 
 
 async def test_custom_async_store_override_fires_once(tmp_path):
-    from poolguy.eventsub import Alert, NotificationHandler
+    from poolguy.eventsub import Alert, AlertFactory, NotificationHandler
     from poolguy.core.storage import StorageFactory
 
     calls = {"n": 0}
 
     class CustomAlert(Alert):
         queue_skip = True
+        store = True
 
         async def process(self):
             pass
@@ -203,12 +208,16 @@ async def test_custom_async_store_override_fires_once(tmp_path):
     storage = StorageFactory.create_storage('sqlite', db_path=str(tmp_path / 'audit.db'))
     bot = type("B", (), {"storage": storage})()
     handler = NotificationHandler(bot, storage)
-    metadata = {
-        "message_id": "custom-audit-1",
-        "message_timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.%f000Z"),
-    }
-    payload = {"subscription": {"type": "channel.ban"}, "event": {}}
-    await handler(metadata, payload)
+    AlertFactory.register_alert_class("audit_custom", CustomAlert)
+    try:
+        metadata = {
+            "message_id": "custom-audit-1",
+            "message_timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        payload = {"subscription": {"type": "audit_custom"}, "event": {}}
+        await handler(metadata, payload)
+    finally:
+        AlertFactory._alert_classes.pop("audit_custom", None)
     assert calls["n"] == 1
 
 
