@@ -98,9 +98,10 @@ class TwitchBot:
         out = ""
         for word in message.split(" "):
             if len(out) + len(word) > 400:
-                r = await self.http.sendChatMessage(out.strip(), channel_id)
-                if not r[0]['is_sent']:
-                    logger.error(f"Message not sent! {r[0]['drop_reason']}")
+                if out.strip():
+                    r = await self.http.sendChatMessage(out.strip(), channel_id)
+                    if not r[0]['is_sent']:
+                        logger.error(f"Message not sent! {r[0]['drop_reason']}")
                 out = word + " "
             else:
                 out += word + " "

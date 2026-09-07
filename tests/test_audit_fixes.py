@@ -344,3 +344,19 @@ async def test_clean_400char_word_single_send():
     await bot.send_chat("y" * 400)
     assert len(rec.sent) == 1, f"expected exactly one send, got {rec.sent}"
     assert all(t and t.strip() for t in rec.sent)
+
+
+async def test_multiword_message_chunks_without_empty_sends():
+    from poolguy.twitch import TwitchBot
+    bot = TwitchBot.__new__(TwitchBot)
+    rec = _ChatRecorder()
+    bot.http = rec
+    msg = "a" * 300 + " " + "b" * 250
+    await bot.send_chat(msg)
+    assert len(rec.sent) == 2, f"expected two chunks, got {rec.sent}"
+    assert all(t and t.strip() for t in rec.sent), "empty send emitted during chunking"
+    assert "".join(t.strip() for t in rec.sent) == msg.replace(" ", "")
+
+    short = "a" * 10 + " " + "b" * 10
+    await bot.send_chat(short)
+    assert len(rec.sent) == 3, f"short message should add one more send, got {rec.sent}"
