@@ -511,3 +511,59 @@ async def test_run_recovers_when_failures_stay_under_cap(monkeypatch, caplog):
     assert len(attempts) == 3, f"expected 2 failures then a recovered connect, got {len(attempts)}"
     assert loop_calls["n"] == 1, "socket loop was not reached after the successful reconnect"
     assert "Giving up" not in caplog.text, "run() gave up although failures stayed under the cap"
+
+
+#=============================================================================================
+# L-03: bare CommandBot() must raise the friendly ValueError, not KeyError('channels')
+#=============================================================================================
+
+def test_command_bot_without_channels_raises_friendly_value_error():
+    import pytest as _pytest
+    from poolguy.twitch import CommandBot
+    with _pytest.raises(ValueError, match="channel.chat.message"):
+        CommandBot()
+
+
+def test_command_bot_with_chat_message_channel_constructs():
+    from poolguy.twitch import CommandBot
+    bot = CommandBot(channels={"channel.chat.message": [None]})
+    assert bot._commands, "command registration did not run"
+
+
+#=============================================================================================
+# L-04: version parity between setup.py and poolguy/http.py BOT_VERSION
+#=============================================================================================
+
+def _repo_root():
+    from pathlib import Path
+    return Path(__file__).resolve().parent.parent
+
+
+def _version_parity_check(setup_src, http_src):
+    import re as _re
+    m_setup = _re.search(r'version\s*=\s*"([^"]+)"', setup_src)
+    m_bot = _re.search(r'BOT_VERSION\s*=\s*"([^"]+)"', http_src)
+    assert m_setup, "version string not found in setup.py"
+    assert m_bot, "BOT_VERSION constant not found in poolguy/http.py"
+    assert m_setup.group(1) == m_bot.group(1), (
+        f"version drift: setup.py={m_setup.group(1)!r} vs http.BOT_VERSION={m_bot.group(1)!r}"
+    )
+
+
+def test_setup_version_matches_http_bot_version():
+    import pytest as _pytest
+
+    setup_src = (_repo_root() / "setup.py").read_text()
+    http_src = (_repo_root() / "poolguy" / "http.py").read_text()
+
+    _version_parity_check(setup_src, http_src)
+
+    # Negative control: editing either string alone must trip the same check.
+    with _pytest.raises(AssertionError, match="version drift"):
+        _version_parity_check(
+            setup_src.replace('version="0.1.9"', 'version="9.9.9"'), http_src
+        )
+    with _pytest.raises(AssertionError, match="version drift"):
+        _version_parity_check(
+            setup_src, http_src.replace('BOT_VERSION = "0.1.9"', 'BOT_VERSION = "8.8.8"')
+        )
