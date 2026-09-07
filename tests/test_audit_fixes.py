@@ -360,3 +360,40 @@ async def test_multiword_message_chunks_without_empty_sends():
     short = "a" * 10 + " " + "b" * 10
     await bot.send_chat(short)
     assert len(rec.sent) == 3, f"short message should add one more send, got {rec.sent}"
+
+
+#=============================================================================================
+# M-03: stop/restart on a never-started WebServer must not raise
+#=============================================================================================
+
+def _free_port():
+    import socket
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+async def test_webserver_stop_and_restart_safe_unstarted():
+    from poolguy.core.webserver import WebServer
+    srv = WebServer(host="127.0.0.1", port=_free_port())
+    await srv.stop()
+    assert not srv.is_running()
+    await srv.restart()
+    assert srv.is_running()
+    await srv.stop()
+    assert not srv.is_running()
+
+
+async def test_webserver_normal_cycle_start_stop_restart_stop():
+    from poolguy.core.webserver import WebServer
+    srv = WebServer(host="127.0.0.1", port=_free_port())
+    await srv.start()
+    assert srv.is_running()
+    await srv.stop()
+    assert not srv.is_running()
+    await srv.restart()
+    assert srv.is_running()
+    await srv.stop()
+    assert not srv.is_running()
