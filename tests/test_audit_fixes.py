@@ -397,3 +397,27 @@ async def test_webserver_normal_cycle_start_stop_restart_stop():
     assert srv.is_running()
     await srv.stop()
     assert not srv.is_running()
+
+
+#=============================================================================================
+# M-04: storage factory must fail loudly on unknown types
+#=============================================================================================
+
+def test_storage_factory_rejects_unknown_types():
+    import pytest as _pytest
+    from poolguy.core.storage import StorageFactory, SQLiteStorage
+    with _pytest.raises(ValueError, match="postgres"):
+        StorageFactory.create_storage("postgres")
+    assert isinstance(StorageFactory.create_storage('sqlite'), SQLiteStorage)
+
+
+def test_storage_instance_bypasses_factory():
+    from poolguy.http import RequestHandler
+    custom = type("C", (), {})()
+    handler = RequestHandler(
+        client_id="client-test",
+        redirect_uri="http://localhost:5000/callback",
+        scopes=["user:read:chat"],
+        storage=custom,
+    )
+    assert handler.storage is custom
