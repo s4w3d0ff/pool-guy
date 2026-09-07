@@ -115,7 +115,7 @@ async def test_default_construction_dedup_does_not_crash(monkeypatch, tmp_path):
 
 
 #=============================================================================================
-# H-01: GenericAlert.store crashes on missing channel_to_table
+# H-01: GenericAlert.store crashed on a nonexistent backend method
 #=============================================================================================
 
 async def test_generic_alert_store_inserts_and_queries_back(tmp_path):

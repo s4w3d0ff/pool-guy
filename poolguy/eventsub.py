@@ -97,7 +97,7 @@ class GenericAlert(Alert):
         out["timestamp"] = self.timestamp
         out["message_id"] = self.message_id
         await self.bot.storage.insert(
-            self.bot.storage.channel_to_table(self.channel),
+            self.channel,
             out
         )
 
