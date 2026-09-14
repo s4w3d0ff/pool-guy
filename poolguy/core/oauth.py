@@ -32,7 +32,6 @@ class TokenHandler:
             redirect_uri=None, 
             scopes=None, 
             storage=None, 
-            webserver=None, 
             browser=None,
             token_endpoint=None,
             oauth_endpoint=None,
@@ -52,12 +51,10 @@ class TokenHandler:
         if redirect_uri:
             parsed_uri = urlparse(redirect_uri)
             default_port = 443 if parsed_uri.scheme == 'https' else 80
-            self.server = webserver or WebServer(parsed_uri.hostname, parsed_uri.port or default_port)
             self._callback_host = parsed_uri.hostname or 'localhost'
             self._callback_port = parsed_uri.port or default_port
             self._callback_path = f"/{parsed_uri.path.lstrip('/')}"
         else:
-            self.server = None
             self._callback_host = None
             self._callback_port = None
             self._callback_path = None
