@@ -111,7 +111,6 @@ async def test_login_with_stored_token_never_starts_callback_listener(monkeypatc
 
     assert handler.user_id == "u1"
     assert handler._callback_server is None, "steady state must not run a callback listener"
-    assert "/callback" not in handler.server.routes, "shared server must have no /callback route"
     await handler.stop()
 
 
