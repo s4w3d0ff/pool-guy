@@ -52,9 +52,15 @@ class TokenHandler:
         if redirect_uri:
             parsed_uri = urlparse(redirect_uri)
             self.server = webserver or WebServer(parsed_uri.hostname, parsed_uri.port)
-            self.server.add_route(f"/{parsed_uri.path.lstrip('/')}", self._callback_handler)
+            self._callback_host = parsed_uri.hostname
+            self._callback_port = parsed_uri.port
+            self._callback_path = f"/{parsed_uri.path.lstrip('/')}"
         else:
             self.server = None
+            self._callback_host = None
+            self._callback_port = None
+            self._callback_path = None
+        self._callback_server = None
         if isinstance(browser, dict):
             self.browser, path = browser.popitem()
             webbrowser.register(self.browser, None, webbrowser.BackgroundBrowser(path))
@@ -82,10 +88,25 @@ class TokenHandler:
             self._auth_future.set_result(self._auth_code)
         return web.Response(text=closeBrowser, content_type='text/html', charset='utf-8')
 
+    async def start_callback(self):
+        if self._callback_server is not None:
+            return
+        server = WebServer(self._callback_host, self._callback_port)
+        server.add_route(self._callback_path, self._callback_handler)
+        await server.start()
+        self._callback_server = server
+
+    async def stop_callback(self):
+        if self._callback_server is None:
+            return
+        try:
+            await self._callback_server.stop()
+        finally:
+            self._callback_server = None
+
     async def _get_auth_code(self):
         logger.warning(f"Getting Twitch Oauth code...")
-        if not self.server.is_running():
-            await self.server.start()
+        await self.start_callback()
         self._auth_future = asyncio.Future()
         self._state = os.urandom(14).hex()
         params = urlencode({
@@ -103,8 +124,6 @@ class TokenHandler:
         except Exception as e:
             logger.exception(f"Couldn't open {self.browser or 'default'} browser! Copy auth link manually:\n{auth_link}")
         await self._auth_future
-        if self.server.route_len() <= 1:
-            await self.server.stop()
         logger.warning(f"Got oauth code!")
 
     def _merge_token(self, new):
@@ -186,7 +205,9 @@ class TokenHandler:
             'redirect_uri': self.redirect_uri
             }
         heads = {'Accept': 'application/json'}
-        return await self._token_request(heads, data)
+        token = await self._token_request(heads, data)
+        await self.stop_callback()
+        return token
 
     async def get_app_token(self):
         if not self.client_secret:
@@ -299,6 +320,7 @@ class TokenHandler:
 
     async def stop(self):
         self._running = False
+        await self.stop_callback()
         if not self._refresh_task:
             return
         self._refresh_task.cancel()
