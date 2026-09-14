@@ -51,9 +51,10 @@ class TokenHandler:
         self.storage = storage or StorageFactory.create_storage('sqlite')
         if redirect_uri:
             parsed_uri = urlparse(redirect_uri)
-            self.server = webserver or WebServer(parsed_uri.hostname, parsed_uri.port)
-            self._callback_host = parsed_uri.hostname
-            self._callback_port = parsed_uri.port
+            default_port = 443 if parsed_uri.scheme == 'https' else 80
+            self.server = webserver or WebServer(parsed_uri.hostname, parsed_uri.port or default_port)
+            self._callback_host = parsed_uri.hostname or 'localhost'
+            self._callback_port = parsed_uri.port or default_port
             self._callback_path = f"/{parsed_uri.path.lstrip('/')}"
         else:
             self.server = None
