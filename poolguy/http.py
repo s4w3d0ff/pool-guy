@@ -24,14 +24,16 @@ class ApiRequestError(Exception):
 
 class RequestHandler:
     def __init__(
-            self, 
-            client_id=None, 
-            client_secret=None, 
-            redirect_uri=None, 
-            scopes=None, 
-            storage=None, 
-            browser=None, 
-            webserver=None, 
+            self,
+            client_id=None,
+            client_secret=None,
+            redirect_uri=None,
+            scopes=None,
+            storage=None,
+            browser=None,
+            webserver=None,
+            host=None,
+            port=None,
             **kwargs
         ):
         self.client_id = client_id
@@ -44,9 +46,13 @@ class RequestHandler:
             self.storage = storage
         # Webserver
         parsed_uri = urlparse(redirect_uri)
+        if host is not None and port is not None:
+            bind_host, bind_port = host, port
+        else:
+            bind_host, bind_port = parsed_uri.hostname, parsed_uri.port
         self.server = webserver or WebServer(
-                host=parsed_uri.hostname, 
-                port=parsed_uri.port, 
+                host=bind_host, 
+                port=bind_port, 
                 **kwargs
             )
         # TokenHandler
