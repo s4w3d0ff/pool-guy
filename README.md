@@ -11,10 +11,36 @@ A lightweight Twitch bot framework.
 - Priority queue for EventSub notifications
 - Bot command and ratelimit decorators
 - Pluggable storage factory (sqlite backend)
+- On-demand OAuth callback listener: no webserver runs unless you inject one or an interactive token acquisition is in progress
 
 ## Limitations:
 - Conduit/shards are not implimented
 - Only uses "[OIDC authorization code grant flow](https://dev.twitch.tv/docs/authentication/#authentication-flows)" for oauth tokens
+
+
+## Webserver model
+
+pool-guy does not run a persistent webserver by default. The only HTTP surface it creates on its own is the OAuth callback listener: when an interactive token acquisition starts, pool-guy binds a short-lived server to exactly the host and port named in `redirect_uri`, waits for the authorization code, exchanges it, and tears the server down. If a valid token is already stored, no server ever comes up.
+
+If you want your bot class to also serve its own routes (a dashboard or API), create a `WebServer` yourself and pass it through with the `webserver=` keyword argument:
+
+```python
+from poolguy import CommandBot
+from poolguy.core.webserver import WebServer
+
+app = WebServer('0.0.0.0', 5000)   # host, port; optional static_dirs / base_dir
+bot = ExampleBot(
+    client_id=os.getenv("CLIENT_ID"),
+    client_secret=os.getenv("CLIENT_SECRET"),
+    redirect_uri="http://localhost:8472/callback",
+    webserver=app,
+    ...
+)
+```
+
+The injected server is used as-is (pool-guy never changes its host or port), and `bot.app` references it. You own starting it; `RequestHandler.shutdown()` stops it if it is still running when the bot shuts down. Without an injected webserver, `bot.app` stays `None` and no persistent HTTP surface exists at all.
+
+Keep `redirect_uri` on a different port than any server you inject: a wildcard bind (for example `0.0.0.0`) holds every loopback address for that port, so a callback listener on the same port cannot bind while the injected server is up.
 
 
 ## Quick Setup
@@ -79,7 +105,7 @@ if __name__ == '__main__':
     bot = ExampleBot(
         client_id=os.getenv("CLIENT_ID"),
         client_secret=os.getenv("CLIENT_SECRET"),
-        redirect_uri="http://localhost:5000/callback",
+        redirect_uri="http://localhost:8472/callback",   # must match the URI registered in your Twitch dev console
         scopes=[
             "user:read:chat",
             "user:write:chat"
