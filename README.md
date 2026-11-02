@@ -97,4 +97,27 @@ if __name__ == '__main__':
     asyncio.run(bot.start())
     
 ```
+## Sharing one storage with another service
+
+`self.storage` (default: sqlite at `db/twitch.db`) keeps one token per name:
+`save_token(name, token)` and `load_token(name)`. Another service that also needs an
+OAuth token can share it by being handed the same object, in `before_login` (after
+pool-guy built its storage, before the bot waits for the Twitch token):
+
+```python
+class ExampleBot(CommandBot):
+    async def before_login(self):
+        # self.storage already holds the "twitch" token; spotifio adds a "spotify" row
+        self.spotify.token_handler.storage = self.storage
+        await self.spotify.login()
+```
+
+spotifio calls `save_token`/`load_token` with keyword arguments only, so a store that
+declares them in either order works unchanged. To use your own store instead of the
+default sqlite one, pass `storage=` to the bot constructor.
+
+spotifio calls `save_token`/`load_token` with keyword arguments only, so a store that
+declares them in either order works unchanged. To use your own store instead of the
+default sqlite one, pass `storage=` to the bot constructor.
+
 More fleshed out example: https://github.com/s4w3d0ff/deezbot

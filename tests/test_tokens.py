@@ -185,3 +185,33 @@ async def test_app_token_grant_against_mock_auth_endpoint(mock_units):
     stored = await handler.storage.load_token("twitch_app")
     assert stored and stored.get("access_token") == token["access_token"]
 
+
+
+class TokenFirstStorage:
+    """Token methods declared (token, name), the order spotifio's JSONStorage uses."""
+
+    def __init__(self):
+        self.tokens = {}
+
+    async def save_token(self, token, name=''):
+        self.tokens[name] = dict(token)
+
+    async def load_token(self, name=''):
+        return self.tokens.get(name)
+
+
+async def test_a_store_declaring_token_first_works_as_poolguy_storage():
+    """pool-guy calls the token methods by keyword, so either declaration order works."""
+    import poolguy.core.oauth as oauthmod
+    store = TokenFirstStorage()
+    handler = oauthmod.TokenHandler(client_id="client-abc", storage=store)
+    saved = {"access_token": "shared", "expires_in": 3600, "expires_time": time.time() + 3600}
+    await store.save_token(token=saved, name=oauthmod.TOKEN_NAME)
+
+    async def validate_ok():
+        return True, {"user_id": "12345", "scopes": [], "expires_in": 3600}
+
+    handler._validate_auth = validate_ok
+    await handler._login()
+    assert handler._token["access_token"] == "shared"
+    await handler.stop()

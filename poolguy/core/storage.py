@@ -113,6 +113,12 @@ class SQLiteStorage:
             await db.commit()
     
     async def save_token(self, name, token):
+        """Store a token under `name`.
+
+        Both parameters can be passed by keyword, so a token handler from another
+        library can call this unchanged whatever order it declares them in
+        (spotifio calls `save_token(token=..., name=...)`).
+        """
         await self.insert("tokens", {"name": name, "token_json": json.dumps(token)})
 
     async def get_token(self, name):
@@ -120,11 +126,12 @@ class SQLiteStorage:
         return json.loads(rows[0]["token_json"]) if rows else None
     
     async def load_token(self, name):
+        """Return the token stored under `name`, or None when there is none."""
         try:
             return await self.get_token(name)
         except Exception as e:
             logger.exception(f"Failed to load token '{name}': {e}")
-            return False
+            return None
 
     async def save_queue(self, name, queue):
         await self.insert("queue", {"name": name, "queue_json": json.dumps(queue)})

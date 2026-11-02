@@ -30,3 +30,32 @@ async def test_queue_save_load_roundtrip(tmp_path):
     storage = SQLiteStorage(str(tmp_path / "queue.db"))
     await storage.save_queue("alerts", [{"message_id": "m1"}])
     assert await storage.load_queue("alerts") == [{"message_id": "m1"}]
+
+
+async def test_token_save_load_roundtrip(tmp_path):
+    storage = SQLiteStorage(str(tmp_path / "tokens.db"))
+    token = {"access_token": "a", "refresh_token": "r", "expires_time": 1}
+    await storage.save_token("twitch", token)
+    assert await storage.load_token("twitch") == token
+
+
+async def test_a_missing_token_loads_as_none(tmp_path):
+    storage = SQLiteStorage(str(tmp_path / "missing.db"))
+    assert await storage.load_token("spotify") is None
+
+
+async def test_an_unreadable_token_loads_as_none(tmp_path):
+    storage = SQLiteStorage(str(tmp_path / "broken.db"))
+    await storage.insert("tokens", {"name": "spotify", "token_json": "{not json"})
+    assert await storage.load_token("spotify") is None
+
+
+async def test_token_methods_work_when_another_library_calls_them_by_keyword(tmp_path):
+    """spotifio calls save_token(token=..., name=...): the same store serves both services."""
+    storage = SQLiteStorage(str(tmp_path / "shared.db"))
+    twitch = {"access_token": "twitch-token", "expires_time": 1}
+    spotify = {"access_token": "spotify-token", "expires_in": 3600}
+    await storage.save_token(name="twitch", token=twitch)
+    await storage.save_token(token=spotify, name="spotify")
+    assert await storage.load_token(name="twitch") == twitch
+    assert await storage.load_token(name="spotify") == spotify

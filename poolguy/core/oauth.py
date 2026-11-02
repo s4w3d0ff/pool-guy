@@ -130,7 +130,7 @@ class TokenHandler:
                 if data.get("grant_type") == "authorization_code":
                     token["requested_scopes"] = list(self.scopes)
                 token["expires_time"] = time.time() + int(token["expires_in"])
-                await self.storage.save_token(TOKEN_NAME, token)
+                await self.storage.save_token(token=token, name=TOKEN_NAME)
                 self._token = token
                 return token
 
@@ -192,7 +192,7 @@ class TokenHandler:
         if not self.client_secret:
             raise ValueError(f"Client secret required for client credentials grant!")
         async with self._app_lock:
-            app = await self.storage.load_token(APP_TOKEN_NAME)
+            app = await self.storage.load_token(name=APP_TOKEN_NAME)
             if app and app.get("access_time", 0) + int(app["expires_in"]) - 60 > time.time():
                 return app
             data = {
@@ -208,7 +208,7 @@ class TokenHandler:
                     app = await resp.json()
             app["token_type"] = "app"
             app["access_time"] = time.time()
-            await self.storage.save_token(APP_TOKEN_NAME, app)
+            await self.storage.save_token(token=app, name=APP_TOKEN_NAME)
             return app
 
     async def _validate_auth(self):
@@ -279,7 +279,7 @@ class TokenHandler:
             self._token = token
         else:
             logger.warning(f"Attempting to load saved token...")
-            stored = await self.storage.load_token(TOKEN_NAME)
+            stored = await self.storage.load_token(name=TOKEN_NAME)
             self._token = stored or None
         if not self._token:
             logger.warning(f"No saved twitch token, starting interactive auth...")
