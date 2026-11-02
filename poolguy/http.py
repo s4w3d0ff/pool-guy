@@ -3,8 +3,7 @@ import asyncio
 import json
 import logging 
 import time
-from urllib.parse import urlparse
-from .core import TokenHandler, WebServer, StorageFactory
+from .core import TokenHandler, StorageFactory
 from .core.logctx import new_request_id, _request_id
 
 logger = logging.getLogger(__name__)
@@ -24,14 +23,14 @@ class ApiRequestError(Exception):
 
 class RequestHandler:
     def __init__(
-            self, 
-            client_id=None, 
-            client_secret=None, 
-            redirect_uri=None, 
-            scopes=None, 
-            storage=None, 
-            browser=None, 
-            webserver=None, 
+            self,
+            client_id=None,
+            client_secret=None,
+            redirect_uri=None,
+            scopes=None,
+            storage=None,
+            browser=None,
+            webserver=None,
             **kwargs
         ):
         self.client_id = client_id
@@ -42,13 +41,10 @@ class RequestHandler:
             self.storage = StorageFactory.create_storage('sqlite')
         else:
             self.storage = storage
-        # Webserver
-        parsed_uri = urlparse(redirect_uri)
-        self.server = webserver or WebServer(
-                host=parsed_uri.hostname, 
-                port=parsed_uri.port, 
-                **kwargs
-            )
+        # Webserver (optional; only present when the consumer injects one).
+        # pool-guy does not run a persistent server by default. The OAuth callback
+        # listener spins up its own short-lived server during interactive auth.
+        self.server = webserver
         # TokenHandler
         self.token = TokenHandler(
                 client_id=client_id, 
@@ -56,17 +52,17 @@ class RequestHandler:
                 redirect_uri=redirect_uri, 
                 scopes=scopes or [], 
                 storage=self.storage, 
-                webserver=self.server, 
                 browser=browser
             )
         self.user_id = None
         self._ratelimit_reset_at = 0
 
     async def shutdown(self):
-        try:
-            await self.server.stop()
-        except Exception as e:
-            logger.error(f"{e}")
+        if self.server is not None:
+            try:
+                await self.server.stop()
+            except Exception as e:
+                logger.error(f"{e}")
         try:
             await self.token.stop()
         except Exception as e:
