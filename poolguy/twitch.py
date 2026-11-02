@@ -36,6 +36,8 @@ class TwitchBot:
 
     def _register_routes_and_websockets(self):
         """Register all methods decorated with @route and @websocket"""
+        if self.app is None:
+            return
         for attr_name in dir(self):
             attr = getattr(self, attr_name)
             # Register routes
